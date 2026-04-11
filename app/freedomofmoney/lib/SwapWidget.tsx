@@ -9,15 +9,15 @@ const ETH_CHAIN_ID = 1;
 
 // ─── Input token options ──────────────────────────────────────────────────────
 const BSC_TOKENS = [
-  { symbol: 'BNB',  input: 'BNB' },
-  { symbol: 'USDT', input: '0x55d398326f99059fF775485246999027B3197955' },
-  { symbol: 'USDC', input: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d' },
+  { symbol: 'BNB',  input: 'BNB',  stable: false },
+  { symbol: 'USDT', input: '0x55d398326f99059fF775485246999027B3197955', stable: true },
+  { symbol: 'USDC', input: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', stable: true },
 ] as const;
 
 const ETH_TOKENS = [
-  { symbol: 'ETH',  input: 'ETH' },
-  { symbol: 'USDT', input: '0xdAC17F958D2ee523a2206206994597C13D831ec7' },
-  { symbol: 'USDC', input: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48' },
+  { symbol: 'ETH',  input: 'ETH',  stable: false },
+  { symbol: 'USDT', input: '0xdAC17F958D2ee523a2206206994597C13D831ec7', stable: true },
+  { symbol: 'USDC', input: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', stable: true },
 ] as const;
 
 // ─── Brand colours ────────────────────────────────────────────────────────────
@@ -132,7 +132,11 @@ export function SwapWidget({
             <div style={{ background: '#F7F5F0', borderRadius: 12, padding: '14px 16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                 <span style={{ fontSize: 12, color: MUTED }}>You pay (approx.)</span>
-                <span style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>~{targetAmountUsd} {tokens[selectedToken].symbol}</span>
+                <span style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>
+                  {tokens[selectedToken].stable
+                    ? `~${targetAmountUsd} ${tokens[selectedToken].symbol}`
+                    : `~$${targetAmountUsd} in ${tokens[selectedToken].symbol}`}
+                </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: 12, color: MUTED }}>You receive (exact)</span>
@@ -164,7 +168,11 @@ export function SwapWidget({
                 boxShadow: clicked ? 'none' : `0 4px 16px rgba(161,139,47,0.3)`,
               }}
             >
-              {clicked ? 'Opened PancakeSwap ✓' : `Swap ${tokens[selectedToken].symbol} → ${targetAmountUsd} $U ↗`}
+              {clicked
+                ? 'Opened PancakeSwap ✓'
+                : tokens[selectedToken].stable
+                  ? `Swap ${tokens[selectedToken].symbol} → ${targetAmountUsd} $U ↗`
+                  : `Swap ${tokens[selectedToken].symbol} → ${targetAmountUsd} $U ↗ (market price)`}
             </a>
 
             {/* Post-click instructions */}

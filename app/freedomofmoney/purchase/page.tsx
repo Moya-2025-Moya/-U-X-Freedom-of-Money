@@ -273,6 +273,11 @@ function Step2({ onPaid }: { onPaid: (txHash: string) => void }) {
               embedded
               onSwapped={() => { refetchBalance(); setSwapOpen(false); }}
               onCancel={() => setSwapOpen(false)}
+              amountU={
+                balance !== undefined && balance < BOOK_U_AMOUNT
+                  ? BOOK_U_AMOUNT - balance
+                  : BOOK_U_AMOUNT
+              }
             />
           </div>
         )}
