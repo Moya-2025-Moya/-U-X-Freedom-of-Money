@@ -15,16 +15,15 @@ import { U_CONTRACT, BOOK_U_AMOUNT, BOOK_USD } from './constants';
 // ─── BSC addresses ────────────────────────────────────────────────────────────
 const ROUTER = '0x13f4EA83D0bd40E75C8222255bc855a974568Dd4' as `0x${string}`;
 const QUOTER  = '0xb048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997' as `0x${string}`;
-const WBNB    = '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095b' as `0x${string}`;
 
 const BSC_CHAIN_ID = 56;
 const ETH_CHAIN_ID = 1;
 
-// ─── BSC tokens — all have active $U pools on PancakeSwap V3 ─────────────────
+// ─── BSC tokens with confirmed V3 pools ──────────────────────────────────────
+// BNB has no V3 pool with $U (V2 only) — handled separately via redirect
 const TOKENS = [
-  { symbol: 'BNB',  address: WBNB,                                                        decimals: 18, native: true  },
-  { symbol: 'USDT', address: '0x55d398326f99059fF775485246999027B3197955' as `0x${string}`, decimals: 18, native: false },
-  { symbol: 'USDC', address: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d' as `0x${string}`, decimals: 18, native: false },
+  { symbol: 'USDT', address: '0x55d398326f99059fF775485246999027B3197955' as `0x${string}`, decimals: 18 },
+  { symbol: 'USDC', address: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d' as `0x${string}`, decimals: 18 },
 ] as const;
 type Token = typeof TOKENS[number];
 
@@ -33,8 +32,9 @@ const SLIPPAGE   = 1.01; // 1%
 
 const QUOTE_REFRESH_MS = 30_000; // auto-refresh every 30s
 
-// ─── PancakeSwap cross-chain URL for ETH → BSC $U ────────────────────────────
+// ─── PancakeSwap external swap URLs ──────────────────────────────────────────
 const PANCAKESWAP_XCHAIN_URL = `https://pancakeswap.finance/swap?chain=eth&outputCurrency=${U_CONTRACT}`;
+const PANCAKESWAP_BSC_URL    = `https://pancakeswap.finance/swap?chain=bsc&outputCurrency=${U_CONTRACT}`;
 
 // ─── ABIs ─────────────────────────────────────────────────────────────────────
 const QUOTER_ABI = [
@@ -213,23 +213,17 @@ export function SwapWidget({
 
   function handleSwap() {
     if (!quote || !address) return;
-    if (token.native) {
-      swap({
-        address: ROUTER, abi: ROUTER_ABI, functionName: 'exactOutputSingle',
-        args: [{ tokenIn: WBNB, tokenOut: U_CONTRACT, fee: quote.fee, recipient: address, amountOut: targetAmountU, amountInMaximum: amountInMax, sqrtPriceLimitX96: BigInt(0) }],
-        value: amountInMax,
-      });
-    } else {
-      swap({
-        address: ROUTER, abi: ROUTER_ABI, functionName: 'exactOutputSingle',
-        args: [{ tokenIn: token.address, tokenOut: U_CONTRACT, fee: quote.fee, recipient: address, amountOut: targetAmountU, amountInMaximum: amountInMax, sqrtPriceLimitX96: BigInt(0) }],
-      });
-    }
+    // All in-page tokens (USDT, USDC) are ERC20 — always use token address
+    swap({
+      address: ROUTER, abi: ROUTER_ABI, functionName: 'exactOutputSingle',
+      args: [{ tokenIn: token.address, tokenOut: U_CONTRACT, fee: quote.fee, recipient: address, amountOut: targetAmountU, amountInMaximum: amountInMax, sqrtPriceLimitX96: BigInt(0) }],
+    });
   }
 
-  const needsApprove = !token.native;
+  // USDT and USDC always require ERC20 approval before swap
+  const needsApprove = true;
   const step: 'approve' | 'swap' | 'done' =
-    swapOk ? 'done' : approveOk || token.native ? 'swap' : 'approve';
+    swapOk ? 'done' : approveOk ? 'swap' : 'approve';
 
   return (
     <div style={embedded ? { background: '#fff' } : { border: `1.5px solid ${GOLD_DIM}`, borderRadius: 16, overflow: 'hidden', background: '#fff' }}>
@@ -313,7 +307,10 @@ export function SwapWidget({
 
             {/* Token selector */}
             <div>
-              <label style={{ fontSize: 11, fontWeight: 600, color: MUTED, letterSpacing: 0.5, display: 'block', marginBottom: 8 }}>Pay with</label>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <label style={{ fontSize: 11, fontWeight: 600, color: MUTED, letterSpacing: 0.5 }}>Pay with</label>
+                <span style={{ fontSize: 10, fontWeight: 600, color: GOLD, background: 'rgba(161,139,47,0.10)', borderRadius: 20, padding: '2px 8px', letterSpacing: 0.4 }}>BNB Chain</span>
+              </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {TOKENS.map(t => (
                   <button
@@ -423,9 +420,19 @@ export function SwapWidget({
               </div>
             )}
 
-            <p style={{ fontSize: 11, color: MUTED, margin: 0, lineHeight: 1.6 }}>
-              Routed via PancakeSwap V3 on BNB Chain. $U: <span style={{ fontFamily: 'monospace' }}>{U_CONTRACT.slice(0, 10)}…{U_CONTRACT.slice(-4)}</span>
-            </p>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <p style={{ fontSize: 11, color: MUTED, margin: 0, lineHeight: 1.6 }}>
+                PancakeSwap V3 · BNB Chain · $U: <span style={{ fontFamily: 'monospace' }}>{U_CONTRACT.slice(0, 10)}…{U_CONTRACT.slice(-4)}</span>
+              </p>
+              <a
+                href={PANCAKESWAP_BSC_URL}
+                target="_blank"
+                rel="noreferrer"
+                style={{ fontSize: 11, color: GOLD, textDecoration: 'none', fontWeight: 600, whiteSpace: 'nowrap', marginLeft: 12 }}
+              >
+                其他代币 ↗
+              </a>
+            </div>
           </>
         )}
       </div>
