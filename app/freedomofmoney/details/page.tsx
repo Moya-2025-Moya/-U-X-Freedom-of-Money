@@ -97,17 +97,17 @@ export default function DetailsPage() {
             <SectionHead label="The Stablecoin" title="What is $U?" />
             <div style={{ fontSize: 15, color: '#444', lineHeight: 1.8 }}>
               <p style={{ margin: '0 0 16px' }}>
-                $U is a USD-pegged stablecoin issued by <a href="https://u.tech" target="_blank" rel="noreferrer" style={{ color: GOLD, textDecoration: 'none', fontWeight: 600 }}>United Stables Limited (BVI)</a>. 1 $U = 1 USD.
+                <a href="https://u.tech" target="_blank" rel="noreferrer" style={{ color: GOLD, textDecoration: 'none', fontWeight: 600 }}>$U</a> is a next-generation stablecoin designed to be the unified liquidity layer for crypto. Natively deployed on BNB Chain and Ethereum, $U connects users, exchanges, DeFi protocols, payment systems, and AI-driven agents into a single, frictionless network.
               </p>
               <p style={{ margin: '0 0 16px' }}>
-                Reserve assets are held through a dedicated trust arrangement operated by Wallets Trust Limited, a registered trustee, ensuring full legal segregation from corporate assets.
+                Today&apos;s stablecoins are fragmented. Liquidity is scattered across chains and exchanges, transparency is inconsistent, and real usability remains limited. $U exists to change this: one stablecoin that is fluid, united, and inclusive.
               </p>
               <p style={{ margin: '0 0 16px' }}>
-                $U is deployed on BNB Chain. It has been audited by PeckShield (Report #2025-157) with zero Critical or High findings.
+                Every $U is backed 1:1 by USD and high-quality stablecoins, held in segregated, auditable custody. Institutions can mint $U directly. Individuals can transact effortlessly across networks. This campaign is one of $U&apos;s first real-world retail use cases: buying a physical product, with full on-chain transparency.
               </p>
-              <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '14px 18px', fontSize: 13, fontFamily: 'monospace', color: TEXT }}>
-                Contract: {CONTRACT}
-              </div>
+              <p style={{ margin: 0 }}>
+                <a href="https://u.tech" target="_blank" rel="noreferrer" style={{ color: GOLD, textDecoration: 'none', fontWeight: 600 }}>Learn more at u.tech ↗</a>
+              </p>
             </div>
           </section>
 

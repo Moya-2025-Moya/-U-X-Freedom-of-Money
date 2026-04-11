@@ -10,17 +10,31 @@ const bscClient = createPublicClient({
   transport: http(process.env.BSC_RPC_URL || 'https://bsc-dataseed1.bnbchain.org'),
 });
 
+type OrderRow = {
+  id: string;
+  created_at: string;
+  wallet_address: string | null;
+  amount_u: number | null;
+  tx_hash: string | null;
+};
+
 async function getStats() {
-  const [balanceRaw, orderData] = await Promise.allSettled([
+  const supabase = getSupabaseAdmin();
+  const [balanceRaw, orderData, ordersData] = await Promise.allSettled([
     bscClient.readContract({
       address: U_ADDR,
       abi: ERC20_ABI,
       functionName: 'balanceOf',
       args: [TREASURY_ADDR],
     }),
-    getSupabaseAdmin()
+    supabase
       .from('book_orders')
       .select('id', { count: 'exact', head: true }),
+    supabase
+      .from('book_orders')
+      .select('id, created_at, wallet_address, amount_u, tx_hash')
+      .order('created_at', { ascending: false })
+      .limit(20),
   ]);
 
   const balance = balanceRaw.status === 'fulfilled'
@@ -29,8 +43,11 @@ async function getStats() {
   const orderCount = orderData.status === 'fulfilled'
     ? (orderData.value.count ?? 0)
     : 0;
+  const orders: OrderRow[] = ordersData.status === 'fulfilled'
+    ? (ordersData.value.data ?? [])
+    : [];
 
-  return { balance, orderCount };
+  return { balance, orderCount, orders };
 }
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
@@ -109,7 +126,7 @@ function ULogo({ size = 28 }: { size?: number }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default async function FreedomOfMoneyPage() {
-  const { balance, orderCount } = await getStats();
+  const { balance, orderCount, orders } = await getStats();
   return (
     <>
       <style>{CSS}</style>
@@ -234,17 +251,38 @@ export default async function FreedomOfMoneyPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: `1px solid ${BORDER}` }}>
-                  {['Buyer', 'Amount', 'Date'].map(c => (
+                  {['Buyer', 'Amount', 'Tx', 'Date'].map(c => (
                     <th key={c} style={{ padding: '10px 20px', textAlign: 'left', fontSize: 10, color: MUTED, letterSpacing: 1.5, textTransform: 'uppercase' as const, fontWeight: 600 }}>{c}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td colSpan={3} style={{ padding: '40px 20px', textAlign: 'center', fontSize: 13, color: MUTED }}>
-                    No orders yet.
-                  </td>
-                </tr>
+                {orders.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} style={{ padding: '40px 20px', textAlign: 'center', fontSize: 13, color: MUTED }}>
+                      No orders yet.
+                    </td>
+                  </tr>
+                ) : orders.map(o => (
+                  <tr key={o.id} style={{ borderBottom: `1px solid ${BORDER}` }}>
+                    <td style={{ padding: '10px 20px', fontSize: 13, color: TEXT, fontFamily: 'monospace' }}>
+                      {o.wallet_address ? `${o.wallet_address.slice(0, 6)}...${o.wallet_address.slice(-4)}` : 'N/A'}
+                    </td>
+                    <td style={{ padding: '10px 20px', fontSize: 13, color: GOLD, fontWeight: 600 }}>
+                      {o.amount_u ? `${o.amount_u} $U` : '22 $U'}
+                    </td>
+                    <td style={{ padding: '10px 20px', fontSize: 12 }}>
+                      {o.tx_hash ? (
+                        <a href={`https://bscscan.com/tx/${o.tx_hash}`} target="_blank" rel="noreferrer" style={{ color: MUTED, textDecoration: 'none', fontFamily: 'monospace' }}>
+                          {o.tx_hash.slice(0, 10)}... ↗
+                        </a>
+                      ) : 'N/A'}
+                    </td>
+                    <td style={{ padding: '10px 20px', fontSize: 12, color: MUTED }}>
+                      {new Date(o.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -262,6 +300,11 @@ export default async function FreedomOfMoneyPage() {
               <a href="/freedomofmoney/track" style={{ color: MUTED, textDecoration: 'none' }}>Track Order</a>
               <a href="https://u.tech/" target="_blank" rel="noreferrer" style={{ color: MUTED, textDecoration: 'none' }}>u.tech ↗</a>
             </div>
+            <a href="https://github.com/Moya-2025-Moya/-U-X-Freedom-of-Money/tree/main" target="_blank" rel="noreferrer"
+              style={{ fontSize: 11, color: MUTED, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <svg width={14} height={14} viewBox="0 0 24 24" fill={MUTED}><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+              Open Source ↗
+            </a>
             <div style={{ fontSize: 10, color: '#BBB', fontFamily: 'monospace' }}>{CONTRACT}</div>
           </div>
         </footer>
