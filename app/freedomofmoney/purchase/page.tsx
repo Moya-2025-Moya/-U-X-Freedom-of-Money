@@ -5,26 +5,10 @@ import Link from 'next/link';
 import { WagmiProvider, useAccount, useConnect, useDisconnect, useWriteContract, useWaitForTransactionReceipt, useReadContract } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { wagmiConfig } from '../lib/wagmi-config';
-import { U_CONTRACT, TREASURY, ERC20_ABI, bscscanTx } from '../lib/constants';
+import { U_CONTRACT, TREASURY, BOOK_USD, BOOK_U_AMOUNT, ERC20_ABI, bscscanTx } from '../lib/constants';
 import { SwapWidget } from '../lib/SwapWidget';
 
-// ─── Regional pricing (Amazon lowest price, USD) ─────────────────────────────
-const REGION_PRICES = [
-  { code: 'GB', label: 'United Kingdom', priceUsd: 13.47 },  // £10.39
-  { code: 'US', label: 'United States',  priceUsd: 14.99 },
-  { code: 'CA', label: 'Canada',          priceUsd: 14.99 },
-  { code: 'AU', label: 'Australia',       priceUsd: 15.99 },
-  { code: 'DE', label: 'Germany',         priceUsd: 14.99 },
-  { code: 'FR', label: 'France',          priceUsd: 14.99 },
-  { code: 'SG', label: 'Singapore',       priceUsd: 14.99 },
-  { code: 'JP', label: 'Japan',           priceUsd: 15.49 },
-  { code: 'IN', label: 'India',           priceUsd: 14.49 },
-  { code: 'AE', label: 'UAE',             priceUsd: 14.99 },
-  { code: 'OTHER', label: 'Other',        priceUsd: 14.99 },
-] as const;
-type RegionCode = typeof REGION_PRICES[number]['code'];
-
-// Countries we cannot ship to (checked at submit)
+// Countries we cannot ship to (checked at submit in Step 3)
 const RESTRICTED_PATTERNS = ['china', 'mainland china', 'prc', "people's republic of china", '中国', '中华人民共和国'];
 
 function isRestricted(country: string) {
@@ -201,15 +185,10 @@ function Step1({ onConnected }: { onConnected: () => void }) {
 
 
 // ─── Step 2: Pay $U ───────────────────────────────────────────────────────────
-function Step2({ onPaid }: { onPaid: (txHash: string, country: string) => void }) {
+function Step2({ onPaid }: { onPaid: (txHash: string) => void }) {
   const { address } = useAccount();
   const { disconnect } = useDisconnect();
   const [swapOpen, setSwapOpen] = useState(true); // PancakeSwap panel open by default
-  const [regionCode, setRegionCode] = useState<RegionCode | ''>('');
-
-  const region = REGION_PRICES.find(r => r.code === regionCode) ?? null;
-  const priceUsd = region?.priceUsd ?? 0;
-  const amountU = region ? BigInt(Math.round(priceUsd * 1e18)) : BigInt(0);
 
   // Read $U balance
   const { data: balance, refetch: refetchBalance } = useReadContract({
@@ -223,15 +202,10 @@ function Step2({ onPaid }: { onPaid: (txHash: string, country: string) => void }
   const { writeContract, data: txHash, isPending: isSigning, error: writeError } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
 
-  useEffect(() => {
-    if (isSuccess && txHash) {
-      const countryLabel = regionCode === 'OTHER' ? '' : (region?.label ?? '');
-      onPaid(txHash, countryLabel);
-    }
-  }, [isSuccess, txHash, onPaid, region, regionCode]);
+  useEffect(() => { if (isSuccess && txHash) onPaid(txHash); }, [isSuccess, txHash, onPaid]);
 
   const balanceU = balance ? Number(balance) / 1e18 : null;
-  const hasEnough = balanceU !== null && region !== null && balanceU >= priceUsd;
+  const hasEnough = balanceU !== null && balanceU >= BOOK_USD;
   const isTreasurySet = TREASURY !== '0x0000000000000000000000000000000000000000';
 
   function pay() {
@@ -239,7 +213,7 @@ function Step2({ onPaid }: { onPaid: (txHash: string, country: string) => void }
       address: U_CONTRACT,
       abi: ERC20_ABI,
       functionName: 'transfer',
-      args: [TREASURY, amountU],
+      args: [TREASURY, BOOK_U_AMOUNT],
     });
   }
 
@@ -254,87 +228,55 @@ function Step2({ onPaid }: { onPaid: (txHash: string, country: string) => void }
         </div>
       </div>
 
-      {/* Shipping region selector */}
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ fontSize: 11, fontWeight: 600, color: MUTED, letterSpacing: 0.8, textTransform: 'uppercase' as const, marginBottom: 8, textAlign: 'center' }}>
-          Where are you shipping to?
-        </div>
-        <select
-          value={regionCode}
-          onChange={e => setRegionCode(e.target.value as RegionCode | '')}
-          style={{
-            display: 'block', width: '100%', padding: '11px 14px', borderRadius: 10, fontSize: 14, color: regionCode ? TEXT : MUTED,
-            border: `1.5px solid ${regionCode ? GOLD : '#E0E0DC'}`, background: '#fff', outline: 'none', fontFamily: 'inherit', cursor: 'pointer',
-          }}
-        >
-          <option value="">Select your country…</option>
-          {REGION_PRICES.map(r => (
-            <option key={r.code} value={r.code}>{r.label}</option>
-          ))}
-        </select>
-      </div>
-
       {/* Amount + balance card */}
       <div style={{ textAlign: 'center', marginBottom: 24 }}>
+        <h2 style={{ fontSize: 22, fontWeight: 800, letterSpacing: -0.5, marginBottom: 16 }}>Pay with $U</h2>
         <div style={{ display: 'inline-block', background: '#fff', border: `1px solid ${GOLD_DIM}`, borderRadius: 16, padding: '18px 36px' }}>
           <div style={{ fontSize: 11, color: MUTED, letterSpacing: 1, textTransform: 'uppercase' as const, marginBottom: 8 }}>Amount Due</div>
-          {region ? (
-            <>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, justifyContent: 'center' }}>
-                <span style={{ fontSize: 42, fontWeight: 900, letterSpacing: -2, color: TEXT }}>{priceUsd.toFixed(2)}</span>
-                <span style={{ fontSize: 20, fontWeight: 700, color: GOLD }}>$U</span>
-              </div>
-              <div style={{ fontSize: 11, color: '#22C55E', fontWeight: 600, marginTop: 6 }}>
-                ✓ Lowest price for your region
-              </div>
-            </>
-          ) : (
-            <div style={{ fontSize: 15, color: MUTED, padding: '8px 0' }}>Select a region above</div>
-          )}
-          {balanceU !== null && region !== null && (
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, justifyContent: 'center' }}>
+            <span style={{ fontSize: 42, fontWeight: 900, letterSpacing: -2, color: TEXT }}>{BOOK_USD}</span>
+            <span style={{ fontSize: 20, fontWeight: 700, color: GOLD }}>$U</span>
+          </div>
+          {balanceU !== null && (
             <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${GOLD_DIM}`, fontSize: 12, color: hasEnough ? '#16A34A' : '#DC2626' }}>
               Your $U balance: <strong>{balanceU.toFixed(2)}</strong>
-              {hasEnough ? ' ✓ sufficient' : ` — need ${(priceUsd - balanceU).toFixed(2)} more`}
+              {hasEnough ? ' ✓ sufficient' : ` — need ${(BOOK_USD - balanceU).toFixed(2)} more`}
             </div>
           )}
         </div>
       </div>
 
-      {/* ── PancakeSwap in-page swap ── always visible once region is selected */}
-      {region !== null && (
-        <div style={{ marginBottom: 24 }}>
-          {/* Collapsible header */}
-          <button
-            onClick={() => setSwapOpen(o => !o)}
-            style={{
-              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '11px 16px',
-              borderRadius: swapOpen ? '12px 12px 0 0' : 12,
-              border: `1.5px solid ${GOLD_DIM}`,
-              borderBottom: swapOpen ? 'none' : `1.5px solid ${GOLD_DIM}`,
-              background: '#F7F5F0', cursor: 'pointer', fontFamily: 'inherit',
-            }}
-          >
-            <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: TEXT }}>
-              <svg width={14} height={14} viewBox="0 0 24 24" fill="none">
-                <path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" stroke={GOLD} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              Swap any token → $U via PancakeSwap
-            </span>
-            <span style={{ fontSize: 11, color: MUTED, fontFamily: 'inherit' }}>{swapOpen ? '▲ hide' : '▼ show'}</span>
-          </button>
-          {swapOpen && (
-            <div style={{ border: `1.5px solid ${GOLD_DIM}`, borderTop: 'none', borderRadius: '0 0 12px 12px', overflow: 'hidden' }}>
-              <SwapWidget
-                embedded
-                amountU={amountU}
-                onSwapped={() => { refetchBalance(); setSwapOpen(false); }}
-                onCancel={() => setSwapOpen(false)}
-              />
-            </div>
-          )}
-        </div>
-      )}
+      {/* ── PancakeSwap in-page swap ── always open by default */}
+      <div style={{ marginBottom: 24 }}>
+        <button
+          onClick={() => setSwapOpen(o => !o)}
+          style={{
+            width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '11px 16px',
+            borderRadius: swapOpen ? '12px 12px 0 0' : 12,
+            border: `1.5px solid ${GOLD_DIM}`,
+            borderBottom: swapOpen ? 'none' : `1.5px solid ${GOLD_DIM}`,
+            background: '#F7F5F0', cursor: 'pointer', fontFamily: 'inherit',
+          }}
+        >
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: TEXT }}>
+            <svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+              <path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" stroke={GOLD} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Swap any token → $U via PancakeSwap
+          </span>
+          <span style={{ fontSize: 11, color: MUTED, fontFamily: 'inherit' }}>{swapOpen ? '▲ hide' : '▼ show'}</span>
+        </button>
+        {swapOpen && (
+          <div style={{ border: `1.5px solid ${GOLD_DIM}`, borderTop: 'none', borderRadius: '0 0 12px 12px', overflow: 'hidden' }}>
+            <SwapWidget
+              embedded
+              onSwapped={() => { refetchBalance(); setSwapOpen(false); }}
+              onCancel={() => setSwapOpen(false)}
+            />
+          </div>
+        )}
+      </div>
 
       {/* Treasury not set warning */}
       {!isTreasurySet && (
@@ -349,24 +291,23 @@ function Step2({ onPaid }: { onPaid: (txHash: string, country: string) => void }
         </div>
       )}
 
-      {/* Pay button — primary CTA */}
+      {/* Pay button */}
       <div style={{ textAlign: 'center' }}>
         <button
           onClick={pay}
-          disabled={!isTreasurySet || !hasEnough || !region || isSigning || isConfirming}
+          disabled={!isTreasurySet || !hasEnough || isSigning || isConfirming}
           style={{
             padding: '14px 40px', borderRadius: 50, border: 'none',
-            cursor: (!isTreasurySet || !hasEnough || !region || isSigning || isConfirming) ? 'not-allowed' : 'pointer',
-            background: (!isTreasurySet || !hasEnough || !region) ? '#D1D5DB' : `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`,
+            cursor: (!isTreasurySet || !hasEnough || isSigning || isConfirming) ? 'not-allowed' : 'pointer',
+            background: (!isTreasurySet || !hasEnough) ? '#D1D5DB' : `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`,
             color: '#fff', fontSize: 15, fontWeight: 700, letterSpacing: 0.3,
-            boxShadow: (!isTreasurySet || !hasEnough || !region) ? 'none' : `0 4px 20px rgba(161,139,47,0.35)`,
+            boxShadow: (!isTreasurySet || !hasEnough) ? 'none' : `0 4px 20px rgba(161,139,47,0.35)`,
           }}
         >
           {isSigning ? 'Waiting for wallet…'
             : isConfirming ? 'Confirming on-chain…'
-            : !region ? 'Select a region above'
-            : !hasEnough ? `Need ${(priceUsd - (balanceU ?? 0)).toFixed(2)} more $U`
-            : `Pay ${priceUsd.toFixed(2)} $U →`}
+            : !hasEnough ? `Need ${(BOOK_USD - (balanceU ?? 0)).toFixed(2)} more $U`
+            : `Pay ${BOOK_USD} $U →`}
         </button>
         {hasEnough && (
           <p style={{ fontSize: 12, color: MUTED, maxWidth: 360, margin: '12px auto 0' }}>
@@ -434,12 +375,12 @@ function TxHashDisplay({ txHash, onContinue }: { txHash: string; onContinue: () 
 }
 
 // ─── Step 3: Shipping address form ────────────────────────────────────────────
-function Step3({ txHash, initialCountry }: { txHash: string; initialCountry: string }) {
+function Step3({ txHash }: { txHash: string }) {
   const { address } = useAccount();
   const [form, setForm] = useState({
     full_name: '', email: '', phone: '',
     address_line1: '', address_line2: '',
-    city: '', state_province: '', postal_code: '', country: initialCountry, notes: '',
+    city: '', state_province: '', postal_code: '', country: '', notes: '',
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -579,7 +520,6 @@ function PurchaseInner() {
   const { isConnected } = useAccount();
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [txHash, setTxHash] = useState('');
-  const [shippingCountry, setShippingCountry] = useState('');
   const [showTxDisplay, setShowTxDisplay] = useState(false);
 
   // Sync step with wallet connection state
@@ -587,9 +527,8 @@ function PurchaseInner() {
     if (!isConnected && step > 1) setStep(1);
   }, [isConnected, step]);
 
-  function handlePaid(hash: string, country: string) {
+  function handlePaid(hash: string) {
     setTxHash(hash);
-    setShippingCountry(country);
     setShowTxDisplay(true);
   }
 
@@ -612,7 +551,7 @@ function PurchaseInner() {
         {step === 1 && <Step1 onConnected={() => setStep(2)} />}
         {step === 2 && !showTxDisplay && <Step2 onPaid={handlePaid} />}
         {step === 2 && showTxDisplay && <TxHashDisplay txHash={txHash} onContinue={() => setStep(3)} />}
-        {step === 3 && <Step3 txHash={txHash} initialCountry={shippingCountry} />}
+        {step === 3 && <Step3 txHash={txHash} />}
       </div>
 
       <div style={{ textAlign: 'center', marginTop: 24 }}>
@@ -630,10 +569,10 @@ export default function PurchasePage() {
       <div style={{ background: BG, minHeight: '100vh', fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', color: TEXT }}>
         <nav style={{ position: 'sticky', top: 0, zIndex: 100, padding: '16px 24px', display: 'flex', justifyContent: 'center' }}>
           <div style={{ background: 'rgba(250,250,248,0.92)', backdropFilter: 'blur(12px)', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 50, padding: '10px 24px', display: 'flex', alignItems: 'center', gap: 20, maxWidth: 600, width: '100%' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+            <a href="https://u.tech/" target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, textDecoration: 'none' }}>
               <ULogo size={22} />
               <span style={{ fontSize: 13, fontWeight: 600, color: TEXT }}>United Stables</span>
-            </div>
+            </a>
             <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
               <Link href="/freedomofmoney" style={{ fontSize: 12, color: MUTED, textDecoration: 'none' }}>← Campaign</Link>
               <span style={{ fontSize: 12, color: GOLD, fontWeight: 600 }}>Order</span>

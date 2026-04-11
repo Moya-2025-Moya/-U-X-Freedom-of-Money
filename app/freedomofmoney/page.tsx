@@ -161,7 +161,7 @@ export default function FreedomOfMoneyPage() {
 
         {/* NAV — logo only, links in footer */}
         <nav style={{ padding: '14px 32px', display: 'flex', alignItems: 'center' }}>
-          <a href="https://ustables.tech" target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}>
+          <a href="https://u.tech/" target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}>
             <ULogo size={22} />
             <span style={{ fontSize: 13, fontWeight: 600, color: TEXT }}>United Stables</span>
           </a>
@@ -271,7 +271,7 @@ export default function FreedomOfMoneyPage() {
           <div style={{ maxWidth: 960, margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
 
             {/* Logo */}
-            <a href="https://ustables.tech" target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}>
+            <a href="https://u.tech/" target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}>
               <ULogo size={18} />
               <span style={{ fontSize: 12, fontWeight: 600, color: TEXT }}>United Stables</span>
             </a>
@@ -282,7 +282,7 @@ export default function FreedomOfMoneyPage() {
                 { label: 'Campaign Details & FAQ', href: '/freedomofmoney/details', external: true },
                 { label: 'Track Your Order', href: '/freedomofmoney/track', external: false },
                 { label: 'GitHub', href: 'https://github.com/Moya-2025-Moya/-U-X-Freedom-of-Money', external: true },
-                { label: 'u.tech', href: 'https://ustables.tech', external: true },
+                { label: 'u.tech', href: 'https://u.tech/', external: true },
               ].map(({ label, href, external }) => (
                 <a key={label} href={href} {...(external ? { target: '_blank', rel: 'noreferrer' } : {})} style={{ fontSize: 12, color: MUTED, textDecoration: 'none' }}>
                   {label}{external ? ' ↗' : ''}
