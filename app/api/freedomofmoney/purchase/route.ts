@@ -1,5 +1,65 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createPublicClient, http } from 'viem';
+import { bsc } from 'viem/chains';
 import { getSupabaseAdmin } from '@/app/lib/supabase-server';
+import { U_CONTRACT, TREASURY, BOOK_U_AMOUNT } from '@/app/freedomofmoney/lib/constants';
+
+// ─── On-chain verification ────────────────────────────────────────────────────
+const bscClient = createPublicClient({ chain: bsc, transport: http() });
+
+const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' as const;
+
+async function verifyPaymentTx(
+  txHash: `0x${string}`,
+  senderWallet: string | null,
+): Promise<string | null> {
+  let receipt;
+  try {
+    receipt = await bscClient.getTransactionReceipt({ hash: txHash });
+  } catch {
+    return 'Transaction not found on BNB Chain';
+  }
+
+  if (!receipt) return 'Transaction not found on BNB Chain';
+  if (receipt.status !== 'success') return 'Transaction failed on-chain';
+
+  // The tx must interact with the $U contract
+  if (receipt.to?.toLowerCase() !== U_CONTRACT.toLowerCase()) {
+    return 'Transaction is not a $U token transfer';
+  }
+
+  // Find the Transfer log from $U to TREASURY
+  const transferLog = receipt.logs.find(
+    log =>
+      log.address.toLowerCase() === U_CONTRACT.toLowerCase() &&
+      log.topics[0] === TRANSFER_TOPIC &&
+      log.topics.length >= 3,
+  );
+
+  if (!transferLog) return 'No $U Transfer event found in transaction';
+
+  // topics[2] is the "to" address, left-padded to 32 bytes
+  const toAddr = ('0x' + (transferLog.topics[2] as string).slice(26)).toLowerCase();
+  const value  = BigInt(transferLog.data);
+
+  if (toAddr !== TREASURY.toLowerCase()) {
+    return 'Transfer recipient is not the United Stables treasury';
+  }
+
+  if (value < BOOK_U_AMOUNT) {
+    return `Insufficient payment: received ${value} but required ${BOOK_U_AMOUNT}`;
+  }
+
+  // Optional: verify the sender matches the wallet that connected
+  if (senderWallet) {
+    const fromAddr = ('0x' + (transferLog.topics[1] as string).slice(26)).toLowerCase();
+    if (fromAddr !== senderWallet.toLowerCase()) {
+      return 'Transaction sender does not match the connected wallet address';
+    }
+  }
+
+  return null; // valid
+}
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -29,6 +89,10 @@ function validate(body: Record<string, unknown>): string | null {
 
   if (str(body.notes).length > 1000) return 'Notes must be under 1000 characters';
 
+  // tx_hash is now required
+  if (!str(body.tx_hash)) return 'Transaction hash is required';
+  if (!/^0x[0-9a-f]{64}$/.test(str(body.tx_hash))) return 'Invalid transaction hash format';
+
   return null;
 }
 
@@ -47,7 +111,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
     }
 
-    // Validate
+    // Validate fields (including required tx_hash)
     const validationError = validate(body as Record<string, unknown>);
     if (validationError) {
       return NextResponse.json({ error: validationError }, { status: 400 });
@@ -63,17 +127,33 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Validate tx_hash format if provided
-    const tx_hash = (body.tx_hash as string)?.trim().toLowerCase() || null;
-    if (tx_hash && !/^0x[0-9a-f]{64}$/.test(tx_hash)) {
-      return NextResponse.json({ error: 'Invalid transaction hash format' }, { status: 400 });
-    }
+    const tx_hash = (body.tx_hash as string).trim().toLowerCase() as `0x${string}`;
     const wallet_address = (body.wallet_address as string)?.trim().toLowerCase() || null;
     if (wallet_address && !/^0x[0-9a-f]{40}$/.test(wallet_address)) {
       return NextResponse.json({ error: 'Invalid wallet address format' }, { status: 400 });
     }
 
     const supabase = getSupabaseAdmin();
+
+    // Duplicate tx_hash guard — prevent reuse of the same payment tx
+    const { data: existing } = await supabase
+      .from('book_orders')
+      .select('id')
+      .eq('tx_hash', tx_hash)
+      .maybeSingle();
+    if (existing) {
+      return NextResponse.json(
+        { error: 'This transaction has already been used for an order' },
+        { status: 400 },
+      );
+    }
+
+    // On-chain payment verification
+    const txError = await verifyPaymentTx(tx_hash, wallet_address);
+    if (txError) {
+      return NextResponse.json({ error: txError }, { status: 400 });
+    }
+
     const { data, error } = await supabase
       .from('book_orders')
       .insert({
