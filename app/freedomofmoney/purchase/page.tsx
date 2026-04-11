@@ -204,7 +204,7 @@ function Step1({ onConnected }: { onConnected: () => void }) {
 function Step2({ onPaid }: { onPaid: (txHash: string, country: string) => void }) {
   const { address } = useAccount();
   const { disconnect } = useDisconnect();
-  const [showSwap, setShowSwap] = useState(false);
+  const [swapOpen, setSwapOpen] = useState(true); // PancakeSwap panel open by default
   const [regionCode, setRegionCode] = useState<RegionCode | ''>('');
 
   const region = REGION_PRICES.find(r => r.code === regionCode) ?? null;
@@ -276,8 +276,7 @@ function Step2({ onPaid }: { onPaid: (txHash: string, country: string) => void }
 
       {/* Amount + balance card */}
       <div style={{ textAlign: 'center', marginBottom: 24 }}>
-        <h2 style={{ fontSize: 22, fontWeight: 800, letterSpacing: -0.5, marginBottom: 16 }}>Pay with $U</h2>
-        <div style={{ display: 'inline-block', background: '#fff', border: `1px solid ${GOLD_DIM}`, borderRadius: 16, padding: '20px 36px' }}>
+        <div style={{ display: 'inline-block', background: '#fff', border: `1px solid ${GOLD_DIM}`, borderRadius: 16, padding: '18px 36px' }}>
           <div style={{ fontSize: 11, color: MUTED, letterSpacing: 1, textTransform: 'uppercase' as const, marginBottom: 8 }}>Amount Due</div>
           {region ? (
             <>
@@ -286,7 +285,7 @@ function Step2({ onPaid }: { onPaid: (txHash: string, country: string) => void }
                 <span style={{ fontSize: 20, fontWeight: 700, color: GOLD }}>$U</span>
               </div>
               <div style={{ fontSize: 11, color: '#22C55E', fontWeight: 600, marginTop: 6 }}>
-                ✓ This is the lowest price at your region
+                ✓ Lowest price for your region
               </div>
             </>
           ) : (
@@ -294,33 +293,45 @@ function Step2({ onPaid }: { onPaid: (txHash: string, country: string) => void }
           )}
           {balanceU !== null && region !== null && (
             <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${GOLD_DIM}`, fontSize: 12, color: hasEnough ? '#16A34A' : '#DC2626' }}>
-              Your $U balance: <strong>{balanceU.toFixed(2)}</strong> {hasEnough ? '✓ sufficient' : `— need ${(priceUsd - balanceU).toFixed(2)} more`}
+              Your $U balance: <strong>{balanceU.toFixed(2)}</strong>
+              {hasEnough ? ' ✓ sufficient' : ` — need ${(priceUsd - balanceU).toFixed(2)} more`}
             </div>
           )}
         </div>
       </div>
 
-      {/* Insufficient balance — show swap option */}
-      {balanceU !== null && !hasEnough && region !== null && (
-        <div style={{ marginBottom: 20 }}>
-          {!showSwap ? (
-            <div style={{ textAlign: 'center' }}>
-              <p style={{ fontSize: 13, color: MUTED, marginBottom: 12 }}>
-                Don&apos;t have enough $U? Swap any token directly below.
-              </p>
-              <button
-                onClick={() => setShowSwap(true)}
-                style={{ padding: '10px 24px', borderRadius: 50, border: `1.5px solid ${GOLD}`, background: 'rgba(233,210,118,0.08)', color: GOLD, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
-              >
-                Swap to $U via PancakeSwap ↓
-              </button>
+      {/* ── PancakeSwap in-page swap ── always visible once region is selected */}
+      {region !== null && (
+        <div style={{ marginBottom: 24 }}>
+          {/* Collapsible header */}
+          <button
+            onClick={() => setSwapOpen(o => !o)}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '11px 16px',
+              borderRadius: swapOpen ? '12px 12px 0 0' : 12,
+              border: `1.5px solid ${GOLD_DIM}`,
+              borderBottom: swapOpen ? 'none' : `1.5px solid ${GOLD_DIM}`,
+              background: '#F7F5F0', cursor: 'pointer', fontFamily: 'inherit',
+            }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: TEXT }}>
+              <svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+                <path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" stroke={GOLD} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Swap any token → $U via PancakeSwap
+            </span>
+            <span style={{ fontSize: 11, color: MUTED, fontFamily: 'inherit' }}>{swapOpen ? '▲ hide' : '▼ show'}</span>
+          </button>
+          {swapOpen && (
+            <div style={{ border: `1.5px solid ${GOLD_DIM}`, borderTop: 'none', borderRadius: '0 0 12px 12px', overflow: 'hidden' }}>
+              <SwapWidget
+                embedded
+                amountU={amountU}
+                onSwapped={() => { refetchBalance(); setSwapOpen(false); }}
+                onCancel={() => setSwapOpen(false)}
+              />
             </div>
-          ) : (
-            <SwapWidget
-              amountU={amountU}
-              onSwapped={() => { refetchBalance(); setShowSwap(false); }}
-              onCancel={() => setShowSwap(false)}
-            />
           )}
         </div>
       )}
@@ -338,6 +349,7 @@ function Step2({ onPaid }: { onPaid: (txHash: string, country: string) => void }
         </div>
       )}
 
+      {/* Pay button — primary CTA */}
       <div style={{ textAlign: 'center' }}>
         <button
           onClick={pay}
@@ -350,11 +362,17 @@ function Step2({ onPaid }: { onPaid: (txHash: string, country: string) => void }
             boxShadow: (!isTreasurySet || !hasEnough || !region) ? 'none' : `0 4px 20px rgba(161,139,47,0.35)`,
           }}
         >
-          {isSigning ? 'Waiting for wallet…' : isConfirming ? 'Confirming on-chain…' : region ? `Pay ${priceUsd.toFixed(2)} $U` : 'Select region to continue'}
+          {isSigning ? 'Waiting for wallet…'
+            : isConfirming ? 'Confirming on-chain…'
+            : !region ? 'Select a region above'
+            : !hasEnough ? `Need ${(priceUsd - (balanceU ?? 0)).toFixed(2)} more $U`
+            : `Pay ${priceUsd.toFixed(2)} $U →`}
         </button>
-        <p style={{ fontSize: 12, color: MUTED, maxWidth: 360, margin: '12px auto 0' }}>
-          Your wallet will prompt you to approve a $U transfer to the United Stables treasury.
-        </p>
+        {hasEnough && (
+          <p style={{ fontSize: 12, color: MUTED, maxWidth: 360, margin: '12px auto 0' }}>
+            Your wallet will prompt you to approve a $U transfer to the United Stables treasury.
+          </p>
+        )}
       </div>
     </div>
   );

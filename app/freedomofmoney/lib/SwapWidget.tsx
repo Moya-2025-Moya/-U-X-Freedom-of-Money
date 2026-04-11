@@ -129,10 +129,11 @@ const TEXT     = '#1A1A1A';
 const MUTED    = '#6B6B6B';
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export function SwapWidget({ onSwapped, onCancel, amountU: customAmountU }: {
+export function SwapWidget({ onSwapped, onCancel, amountU: customAmountU, embedded = false }: {
   onSwapped: () => void;
   onCancel: () => void;
   amountU?: bigint;
+  embedded?: boolean; // hides outer border/header when nested in a container
 }) {
   const { address } = useAccount();
   const client = usePublicClient();
@@ -234,17 +235,19 @@ export function SwapWidget({ onSwapped, onCancel, amountU: customAmountU }: {
     : 'approve';
 
   return (
-    <div style={{ border: `1.5px solid ${GOLD_DIM}`, borderRadius: 16, overflow: 'hidden', background: '#fff' }}>
-      {/* Header */}
-      <div style={{ padding: '13px 18px', background: '#F7F5F0', borderBottom: `1px solid ${GOLD_DIM}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <svg width={15} height={15} viewBox="0 0 24 24" fill="none">
-            <path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" stroke={GOLD} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <span style={{ fontSize: 13, fontWeight: 700 }}>Swap to $U — powered by PancakeSwap</span>
+    <div style={embedded ? { background: '#fff' } : { border: `1.5px solid ${GOLD_DIM}`, borderRadius: 16, overflow: 'hidden', background: '#fff' }}>
+      {/* Header — only shown when not embedded */}
+      {!embedded && (
+        <div style={{ padding: '13px 18px', background: '#F7F5F0', borderBottom: `1px solid ${GOLD_DIM}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <svg width={15} height={15} viewBox="0 0 24 24" fill="none">
+              <path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" stroke={GOLD} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>Swap to $U — powered by PancakeSwap</span>
+          </div>
+          <button onClick={onCancel} style={{ background: 'none', border: 'none', cursor: 'pointer', color: MUTED, fontSize: 20, lineHeight: 1, padding: 0 }}>×</button>
         </div>
-        <button onClick={onCancel} style={{ background: 'none', border: 'none', cursor: 'pointer', color: MUTED, fontSize: 20, lineHeight: 1, padding: 0 }}>×</button>
-      </div>
+      )}
 
       <div style={{ padding: '20px 20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
 
