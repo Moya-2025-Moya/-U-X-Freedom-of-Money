@@ -147,10 +147,10 @@ export default function DetailsPage() {
             <SectionHead label="Transparency" title="Where Your Money Goes" />
             <div style={{ fontSize: 15, color: '#444', lineHeight: 1.8, marginBottom: 20 }}>
               <p style={{ margin: '0 0 16px' }}>
-                100% of your $U payment goes to the Treasury wallet. From there, it is donated to charity. The Treasury is a standard BSC wallet with no executable logic and zero attack surface.
+                <strong>100% of your payment goes to charity.</strong> Your $U is sent to a public Treasury wallet, from which all funds are donated. The Treasury is a standard BSC wallet with no executable logic and zero attack surface.
               </p>
               <p style={{ margin: 0 }}>
-                Every inbound payment and every outbound donation is permanently recorded on BNB Chain and publicly visible.
+                Every payment and every charity donation is permanently recorded on BNB Chain and publicly verifiable by anyone.
               </p>
             </div>
             <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '16px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>

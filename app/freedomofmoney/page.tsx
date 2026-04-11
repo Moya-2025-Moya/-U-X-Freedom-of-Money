@@ -158,15 +158,25 @@ export default async function FreedomOfMoneyPage() {
                 Pay with <strong style={{ color: GOLD }}>$U</strong>. 100% to charity. On-chain verified.
               </p>
 
-              <a href="/freedomofmoney/purchase" style={{
-                display: 'inline-flex', alignItems: 'center', gap: 8, alignSelf: 'flex-start',
-                padding: '13px 28px', borderRadius: 50, textDecoration: 'none',
-                background: TEXT, color: '#fff', fontSize: 14, fontWeight: 700,
-                boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
-              }}>
-                Order Your Copy
-                <svg width={15} height={15} viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="#fff" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" /></svg>
-              </a>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <a href="/freedomofmoney/purchase" style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 8,
+                  padding: '13px 28px', borderRadius: 50, textDecoration: 'none',
+                  background: TEXT, color: '#fff', fontSize: 14, fontWeight: 700,
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+                }}>
+                  Order Your Copy
+                  <svg width={15} height={15} viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="#fff" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" /></svg>
+                </a>
+                <a href="/freedomofmoney/track" style={{
+                  display: 'inline-flex', alignItems: 'center',
+                  padding: '13px 22px', borderRadius: 50, textDecoration: 'none',
+                  border: `1.5px solid ${BORDER}`, color: MUTED, fontSize: 13, fontWeight: 600,
+                  background: CARD,
+                }}>
+                  Track Order
+                </a>
+              </div>
             </div>
           </div>
         </section>

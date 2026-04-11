@@ -376,7 +376,6 @@ function Step3({
   const { writeContract, data: txHash, isPending: isSigning, error: writeError } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
 
-  const [swapOpen, setSwapOpen] = useState(false);
   const [submitState, setSubmitState] = useState<'idle' | 'submitting' | 'done' | 'error'>('idle');
   const [submitError, setSubmitError] = useState('');
   const [orderId, setOrderId] = useState('');
@@ -504,65 +503,21 @@ function Step3({
         </p>
       </div>
 
-      {/* Swap widget - shown only when balance is insufficient */}
+      {/* Swap widget - always visible when balance insufficient */}
       {balanceU !== null && !hasEnough && (
-        <div>
-          <button
-            onClick={() => setSwapOpen(o => !o)}
-            style={{
-              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '11px 16px',
-              borderRadius: swapOpen ? '12px 12px 0 0' : 12,
-              border: `1.5px solid ${GOLD_DIM}`,
-              borderBottom: swapOpen ? 'none' : `1.5px solid ${GOLD_DIM}`,
-              background: '#F7F5F0', cursor: 'pointer', fontFamily: 'inherit',
-            }}
-          >
-            <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: TEXT }}>
-              <svg width={14} height={14} viewBox="0 0 24 24" fill="none">
-                <path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" stroke={GOLD} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              Need {shortfall.toFixed(2)} more $U? Swap via PancakeSwap
-            </span>
-            <span style={{ fontSize: 11, color: MUTED, fontFamily: 'inherit' }}>{swapOpen ? '▲ hide' : '▼ show'}</span>
-          </button>
-          {swapOpen && (
-            <div style={{ border: `1.5px solid ${GOLD_DIM}`, borderTop: 'none', borderRadius: '0 0 12px 12px', overflow: 'hidden' }}>
-              <SwapWidget
-                embedded
-                onSwapped={() => { refetchBalance(); setSwapOpen(false); }}
-                onCancel={() => setSwapOpen(false)}
-                amountU={shortfallBigInt}
-              />
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Also allow swap when user has enough (collapsed by default) */}
-      {(balanceU === null || hasEnough) && (
-        <div>
-          <button
-            onClick={() => setSwapOpen(o => !o)}
-            style={{
-              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '10px 16px', borderRadius: 12,
-              border: `1.5px solid ${GOLD_DIM}`,
-              background: '#F7F5F0', cursor: 'pointer', fontFamily: 'inherit',
-            }}
-          >
-            <span style={{ fontSize: 12, color: MUTED }}>Need to swap tokens for $U?</span>
-            <span style={{ fontSize: 11, color: MUTED }}>{swapOpen ? '▲ hide' : '▼ show'}</span>
-          </button>
-          {swapOpen && (
-            <div style={{ border: `1.5px solid ${GOLD_DIM}`, borderTop: 'none', borderRadius: '0 0 12px 12px', overflow: 'hidden', marginTop: -1 }}>
-              <SwapWidget
-                embedded
-                onSwapped={() => { refetchBalance(); setSwapOpen(false); }}
-                onCancel={() => setSwapOpen(false)}
-              />
-            </div>
-          )}
+        <div style={{ border: `1.5px solid ${GOLD_DIM}`, borderRadius: 12, overflow: 'hidden' }}>
+          <div style={{ padding: '11px 16px', background: '#F7F5F0', borderBottom: `1px solid ${GOLD_DIM}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+              <path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" stroke={GOLD} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span style={{ fontSize: 13, fontWeight: 600, color: TEXT }}>Get {shortfall.toFixed(2)} $U</span>
+          </div>
+          <SwapWidget
+            embedded
+            onSwapped={() => { refetchBalance(); }}
+            onCancel={() => {}}
+            amountU={shortfallBigInt}
+          />
         </div>
       )}
 

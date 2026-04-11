@@ -6,12 +6,12 @@ export const U_CONTRACT = '0xcE24439F2D9C6a2289F741120FE202248B666666' as `0x${s
 
 export const TREASURY = '0x7B72496CC89D82A31f1513D8F01973db70c3E85B' as `0x${string}`;
 
-// Book price in $U (18 decimals). $U is pegged at $1, book is ~$13.46.
-export const BOOK_GBP = 10.39;
-export const GBP_USD  = 1.296;
-export const BOOK_USD = +(BOOK_GBP * GBP_USD).toFixed(2);
+// Book price in $U (18 decimals).
+// Paperback £10.39 + shipping £5.84 = £16.23, at GBP/USD ~1.30 = ~$21.
+// Rounded to $22 to cover FX fluctuations and regional shipping variance.
+export const BOOK_USD = 22;
 // BigInt representation for on-chain transfer (18 decimals)
-export const BOOK_U_AMOUNT = BigInt(Math.round(BOOK_USD * 1e6)) * BigInt(10) ** BigInt(12);
+export const BOOK_U_AMOUNT = BigInt(BOOK_USD) * BigInt(10) ** BigInt(18);
 
 // Minimal ERC-20 ABI - only what we need
 export const ERC20_ABI = [
