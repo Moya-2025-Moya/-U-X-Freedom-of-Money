@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useChainId, useSwitchChain, useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract } from 'wagmi';
+import { useState, useEffect, useCallback } from 'react';
+import { useChainId, useSwitchChain, useAccount, useSendTransaction, useWaitForTransactionReceipt, useReadContract, useWriteContract } from 'wagmi';
 import { U_CONTRACT, BOOK_U_AMOUNT, ERC20_ABI } from './constants';
 
 const BSC_CHAIN_ID = 56;
@@ -9,51 +9,25 @@ const BSC_CHAIN_ID = 56;
 const USDT_BSC = '0x55d398326f99059fF775485246999027B3197955' as const;
 const USDC_BSC = '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d' as const;
 
-// PancakeSwap Smart Router V3 (supports V2, V3, and StableSwap)
-const PANCAKE_ROUTER = '0x13f4EA83D0bd40E75C8222255bc855a974568Dd4' as `0x${string}`;
-
-const STABLE_SWAP_ABI = [
-  {
-    name: 'exactInputStableSwap',
-    type: 'function',
-    stateMutability: 'payable',
-    inputs: [
-      { name: 'path', type: 'address[]' },
-      { name: 'flag', type: 'uint256[]' },
-      { name: 'amountIn', type: 'uint256' },
-      { name: 'amountOutMinimum', type: 'uint256' },
-      { name: 'to', type: 'address' },
-    ],
-    outputs: [{ name: 'amountOut', type: 'uint256' }],
-  },
-] as const;
+// Paraswap Token Transfer Proxy (user approves tokens to this address)
+const PARASWAP_PROXY = '0x216b4b4ba9f3e719726886d34a177484278bfcae' as `0x${string}`;
 
 const APPROVE_ABI = [
   {
-    name: 'approve',
-    type: 'function',
-    stateMutability: 'nonpayable',
-    inputs: [
-      { name: 'spender', type: 'address' },
-      { name: 'amount', type: 'uint256' },
-    ],
+    name: 'approve', type: 'function', stateMutability: 'nonpayable' as const,
+    inputs: [{ name: 'spender', type: 'address' }, { name: 'amount', type: 'uint256' }],
     outputs: [{ name: '', type: 'bool' }],
   },
   {
-    name: 'allowance',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [
-      { name: 'owner', type: 'address' },
-      { name: 'spender', type: 'address' },
-    ],
+    name: 'allowance', type: 'function', stateMutability: 'view' as const,
+    inputs: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }],
     outputs: [{ name: '', type: 'uint256' }],
   },
 ] as const;
 
 const TOKENS = [
-  { symbol: 'USDT', address: USDT_BSC },
-  { symbol: 'USDC', address: USDC_BSC },
+  { symbol: 'USDT', address: USDT_BSC, decimals: 18 },
+  { symbol: 'USDC', address: USDC_BSC, decimals: 18 },
 ] as const;
 
 const GOLD       = '#A18B2F';
@@ -61,6 +35,8 @@ const GOLD_LIGHT = '#E9D276';
 const GOLD_DIM   = 'rgba(161,139,47,0.18)';
 const MUTED      = '#6B6B6B';
 const TEXT       = '#1A1A1A';
+
+type SwapStep = 'idle' | 'quoting' | 'approve' | 'approving' | 'ready' | 'swapping' | 'done' | 'error';
 
 export function SwapWidget({
   onSwapped,
@@ -79,12 +55,16 @@ export function SwapWidget({
 
   const targetAmountU = customAmountU ?? BOOK_U_AMOUNT;
   const targetUsd     = (Number(targetAmountU) / 1e18).toFixed(2);
-  // For stablecoin swap: input ~= output. Add 0.5% buffer for StableSwap fee + slippage.
-  const inputAmount   = BigInt(Math.ceil(Number(targetAmountU) * 1.005));
-  const inputUsd      = (Number(inputAmount) / 1e18).toFixed(2);
+  // Add 1% buffer for quote variance
+  const inputEstimate = BigInt(Math.ceil(Number(targetAmountU) * 1.01));
 
   const isBSC = chainId === BSC_CHAIN_ID;
-  const [selectedToken, setSelectedToken] = useState(0); // 0=USDT, 1=USDC
+  const [selectedToken, setSelectedToken] = useState(0);
+  const [step, setStep]     = useState<SwapStep>('idle');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [swapTxData, setSwapTxData] = useState<{ to: string; data: string; value: string } | null>(null);
+  const [quoteOutput, setQuoteOutput] = useState('');
+
   const token = TOKENS[selectedToken];
 
   // Check allowance
@@ -92,7 +72,7 @@ export function SwapWidget({
     address: token.address,
     abi: APPROVE_ABI,
     functionName: 'allowance',
-    args: [address!, PANCAKE_ROUTER],
+    args: [address!, PARASWAP_PROXY],
     query: { enabled: !!address && isBSC },
   });
 
@@ -105,53 +85,94 @@ export function SwapWidget({
     query: { enabled: !!address && isBSC },
   });
 
-  const hasTokenBalance = tokenBalance !== undefined && tokenBalance >= inputAmount;
-  const needsApproval   = allowance !== undefined && allowance < inputAmount;
+  const hasBalance = tokenBalance !== undefined && tokenBalance >= inputEstimate;
+  const needsApproval = allowance !== undefined && allowance < inputEstimate;
 
-  // Approve tx
+  // Approve
   const { writeContract: writeApprove, data: approveTxHash, isPending: approving } = useWriteContract();
   const { isSuccess: approveConfirmed } = useWaitForTransactionReceipt({ hash: approveTxHash });
 
-  // Swap tx
-  const { writeContract: writeSwap, data: swapTxHash, isPending: swapping, error: swapError } = useWriteContract();
+  // Swap (raw send)
+  const { sendTransaction, data: swapTxHash, isPending: sendingSwap } = useSendTransaction();
   const { isSuccess: swapConfirmed } = useWaitForTransactionReceipt({ hash: swapTxHash });
 
-  // After approve confirms, refetch allowance
-  useEffect(() => {
-    if (approveConfirmed) refetchAllowance();
-  }, [approveConfirmed, refetchAllowance]);
+  useEffect(() => { if (approveConfirmed) { refetchAllowance(); setStep('idle'); } }, [approveConfirmed, refetchAllowance]);
+  useEffect(() => { if (swapConfirmed) { setStep('done'); onSwapped(); } }, [swapConfirmed, onSwapped]);
 
-  // After swap confirms, notify parent
-  useEffect(() => {
-    if (swapConfirmed) onSwapped();
-  }, [swapConfirmed, onSwapped]);
+  const fetchQuote = useCallback(async () => {
+    if (!address || !isBSC) return;
+    setStep('quoting');
+    setErrorMsg('');
+    try {
+      const srcAmount = inputEstimate.toString();
+      const priceRes = await fetch(
+        `https://apiv5.paraswap.io/prices?srcToken=${token.address}&destToken=${U_CONTRACT}&amount=${srcAmount}&srcDecimals=${token.decimals}&destDecimals=18&network=56&side=SELL`
+      );
+      const priceData = await priceRes.json();
+      if (priceData.error) throw new Error(priceData.error);
+
+      const destAmount = priceData.priceRoute.destAmount;
+      setQuoteOutput((Number(destAmount) / 1e18).toFixed(2));
+
+      // Check if output >= target
+      if (BigInt(destAmount) < targetAmountU) {
+        throw new Error(`Quote output (${(Number(destAmount)/1e18).toFixed(2)}) is less than required (${targetUsd}). Try again.`);
+      }
+
+      // Build tx
+      const buildRes = await fetch('https://apiv5.paraswap.io/transactions/56', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          srcToken: token.address,
+          destToken: U_CONTRACT,
+          srcAmount,
+          destAmount,
+          priceRoute: priceData.priceRoute,
+          userAddress: address,
+          txOrigin: address,
+          slippage: 100, // 1%
+        }),
+      });
+      const buildData = await buildRes.json();
+      if (buildData.error) throw new Error(typeof buildData.error === 'string' ? buildData.error : JSON.stringify(buildData.error));
+
+      setSwapTxData({ to: buildData.to, data: buildData.data, value: buildData.value || '0' });
+
+      // Check if approval needed
+      if (needsApproval) {
+        setStep('approve');
+      } else {
+        setStep('ready');
+      }
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : 'Failed to get quote');
+      setStep('error');
+    }
+  }, [address, isBSC, token, inputEstimate, targetAmountU, targetUsd, needsApproval]);
 
   function handleApprove() {
+    setStep('approving');
     writeApprove({
       address: token.address,
       abi: APPROVE_ABI,
       functionName: 'approve',
-      args: [PANCAKE_ROUTER, inputAmount],
+      args: [PARASWAP_PROXY, inputEstimate],
     });
   }
 
   function handleSwap() {
-    if (!address) return;
-    writeSwap({
-      address: PANCAKE_ROUTER,
-      abi: STABLE_SWAP_ABI,
-      functionName: 'exactInputStableSwap',
-      args: [
-        [token.address, U_CONTRACT],    // path: USDT/USDC -> $U
-        [BigInt(2)],                            // flag: 2 = StableSwap
-        inputAmount,                     // amountIn
-        targetAmountU,                   // amountOutMinimum (exact amount needed)
-        address,                         // to: user's wallet
-      ],
+    if (!swapTxData) return;
+    setStep('swapping');
+    sendTransaction({
+      to: swapTxData.to as `0x${string}`,
+      data: swapTxData.data as `0x${string}`,
+      value: BigInt(swapTxData.value),
     });
   }
 
-  const tokenBalanceDisplay = tokenBalance !== undefined ? (Number(tokenBalance) / 1e18).toFixed(2) : '...';
+  const tokenBalDisplay = tokenBalance !== undefined ? (Number(tokenBalance) / 1e18).toFixed(2) : '...';
+  const inputUsd = (Number(inputEstimate) / 1e18).toFixed(2);
 
   return (
     <div style={embedded ? {} : { border: `1.5px solid ${GOLD_DIM}`, borderRadius: 16, overflow: 'hidden', background: '#fff' }}>
@@ -165,120 +186,128 @@ export function SwapWidget({
 
       <div style={{ padding: '16px 16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-        {/* Wrong chain */}
         {!isBSC && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ background: '#FEF9EC', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: TEXT, lineHeight: 1.6 }}>
-              Switch your wallet to <strong>BNB Chain</strong> to swap.
+            <div style={{ background: '#FEF9EC', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: TEXT }}>
+              Switch to <strong>BNB Chain</strong> to swap.
             </div>
-            <button
-              onClick={() => switchChain({ chainId: BSC_CHAIN_ID })}
-              disabled={switching}
+            <button onClick={() => switchChain({ chainId: BSC_CHAIN_ID })} disabled={switching}
               style={{ padding: '12px', borderRadius: 50, border: 'none', cursor: 'pointer',
-                background: `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`, color: '#fff', fontSize: 14, fontWeight: 700 }}
-            >
+                background: `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`, color: '#fff', fontSize: 14, fontWeight: 700 }}>
               {switching ? 'Switching...' : 'Switch to BNB Chain'}
             </button>
           </div>
         )}
 
-        {/* BSC connected */}
         {isBSC && (
           <>
             {/* Token selector */}
             <div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <label style={{ fontSize: 11, fontWeight: 600, color: MUTED, letterSpacing: 0.5 }}>Swap from</label>
-                <span style={{ fontSize: 10, fontWeight: 600, color: GOLD, background: 'rgba(161,139,47,0.10)', borderRadius: 20, padding: '2px 8px' }}>
-                  BNB Chain
-                </span>
+                <label style={{ fontSize: 11, fontWeight: 600, color: MUTED }}>Swap from</label>
+                <span style={{ fontSize: 10, fontWeight: 600, color: GOLD, background: 'rgba(161,139,47,0.10)', borderRadius: 20, padding: '2px 8px' }}>BNB Chain</span>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 {TOKENS.map((t, i) => (
-                  <button
-                    key={t.symbol}
-                    onClick={() => setSelectedToken(i)}
+                  <button key={t.symbol}
+                    onClick={() => { setSelectedToken(i); setStep('idle'); setSwapTxData(null); }}
                     style={{
                       padding: '7px 14px', borderRadius: 50,
                       border: `1.5px solid ${selectedToken === i ? GOLD : '#E0E0DC'}`,
                       background: selectedToken === i ? 'rgba(233,210,118,0.12)' : '#fff',
                       color: selectedToken === i ? GOLD : MUTED,
                       fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                    }}
-                  >
+                    }}>
                     {t.symbol}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Swap details */}
+            {/* Swap summary */}
             <div style={{ background: '#F7F5F0', borderRadius: 10, padding: '12px 14px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span style={{ fontSize: 12, color: MUTED }}>You pay</span>
+                <span style={{ fontSize: 12, color: MUTED }}>You pay (approx.)</span>
                 <span style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>{inputUsd} {token.symbol}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                 <span style={{ fontSize: 12, color: MUTED }}>You receive</span>
-                <span style={{ fontSize: 15, fontWeight: 700, color: GOLD }}>{targetUsd} $U</span>
+                <span style={{ fontSize: 15, fontWeight: 700, color: GOLD }}>{quoteOutput || `~${targetUsd}`} $U</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 11, color: '#BBB' }}>Your {token.symbol} balance</span>
-                <span style={{ fontSize: 11, color: hasTokenBalance ? '#16A34A' : '#DC2626', fontWeight: 600 }}>{tokenBalanceDisplay}</span>
+                <span style={{ fontSize: 11, color: '#BBB' }}>Your {token.symbol}</span>
+                <span style={{ fontSize: 11, color: hasBalance ? '#16A34A' : '#DC2626', fontWeight: 600 }}>{tokenBalDisplay}</span>
               </div>
             </div>
 
-            {/* Insufficient balance warning */}
-            {tokenBalance !== undefined && !hasTokenBalance && (
+            {tokenBalance !== undefined && !hasBalance && (
               <div style={{ background: '#FEF2F2', borderRadius: 10, padding: '10px 14px', fontSize: 12, color: '#DC2626' }}>
-                Insufficient {token.symbol} balance. You need at least {inputUsd} {token.symbol}.
+                Insufficient {token.symbol}. You need at least {inputUsd}.
               </div>
             )}
 
             {/* Action buttons */}
-            {hasTokenBalance && needsApproval && (
-              <button
-                onClick={handleApprove}
-                disabled={approving}
-                style={{
-                  padding: '12px', borderRadius: 50, border: 'none', cursor: approving ? 'not-allowed' : 'pointer',
-                  background: `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`, color: '#fff', fontSize: 14, fontWeight: 700,
-                  width: '100%',
-                }}
-              >
-                {approving ? 'Approving...' : `Approve ${token.symbol}`}
+            {hasBalance && step === 'idle' && (
+              <button onClick={fetchQuote}
+                style={{ padding: '12px', borderRadius: 50, border: 'none', cursor: 'pointer',
+                  background: `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`, color: '#fff', fontSize: 14, fontWeight: 700, width: '100%' }}>
+                Get Quote
               </button>
             )}
 
-            {hasTokenBalance && !needsApproval && (
-              <button
-                onClick={handleSwap}
-                disabled={swapping}
-                style={{
-                  padding: '12px', borderRadius: 50, border: 'none', cursor: swapping ? 'not-allowed' : 'pointer',
-                  background: `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`, color: '#fff', fontSize: 14, fontWeight: 700,
-                  width: '100%',
-                }}
-              >
-                {swapping ? 'Swapping...' : `Swap ${inputUsd} ${token.symbol} for ${targetUsd} $U`}
+            {step === 'quoting' && (
+              <div style={{ textAlign: 'center', padding: '12px', fontSize: 13, color: MUTED }}>Fetching best price...</div>
+            )}
+
+            {step === 'approve' && (
+              <button onClick={handleApprove}
+                style={{ padding: '12px', borderRadius: 50, border: 'none', cursor: 'pointer',
+                  background: `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`, color: '#fff', fontSize: 14, fontWeight: 700, width: '100%' }}>
+                Approve {token.symbol}
               </button>
             )}
 
-            {swapConfirmed && (
-              <div style={{ background: '#F0FDF4', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#16A34A', fontWeight: 600, textAlign: 'center' }}>
-                Swap complete! Your $U balance will update shortly.
+            {step === 'approving' && (
+              <div style={{ textAlign: 'center', padding: '12px', fontSize: 13, color: MUTED }}>
+                {approving ? 'Confirm in wallet...' : 'Waiting for approval...'}
               </div>
             )}
 
-            {swapError && (
-              <div style={{ background: '#FEF2F2', borderRadius: 10, padding: '10px 14px', fontSize: 12, color: '#DC2626' }}>
-                {swapError.message.split('\n')[0]}
+            {step === 'ready' && (
+              <button onClick={handleSwap}
+                style={{ padding: '12px', borderRadius: 50, border: 'none', cursor: 'pointer',
+                  background: `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`, color: '#fff', fontSize: 14, fontWeight: 700, width: '100%' }}>
+                Swap {inputUsd} {token.symbol} for {quoteOutput} $U
+              </button>
+            )}
+
+            {step === 'swapping' && (
+              <div style={{ textAlign: 'center', padding: '12px', fontSize: 13, color: MUTED }}>
+                {sendingSwap ? 'Confirm in wallet...' : 'Swapping on-chain...'}
+              </div>
+            )}
+
+            {step === 'done' && (
+              <div style={{ background: '#F0FDF4', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: '#16A34A', fontWeight: 600, textAlign: 'center' }}>
+                Swap complete! Balance updated.
+              </div>
+            )}
+
+            {step === 'error' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ background: '#FEF2F2', borderRadius: 10, padding: '10px 14px', fontSize: 12, color: '#DC2626' }}>
+                  {errorMsg}
+                </div>
+                <button onClick={() => { setStep('idle'); setErrorMsg(''); }}
+                  style={{ fontSize: 12, color: GOLD, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
+                  Try again
+                </button>
               </div>
             )}
 
             {/* Disclaimer */}
             <div style={{ fontSize: 10, color: '#BBB', lineHeight: 1.5 }}>
-              Swap routed through <a href="https://pancakeswap.finance" target="_blank" rel="noreferrer" style={{ color: GOLD, textDecoration: 'none' }}>PancakeSwap StableSwap</a> (audited by PeckShield, CertiK, SlowMist). 0.5% slippage buffer included. No additional fees from United Stables.
+              Swap routed by <a href="https://www.paraswap.io" target="_blank" rel="noreferrer" style={{ color: GOLD, textDecoration: 'none' }}>Paraswap</a> via PancakeSwap liquidity pools (audited by PeckShield, CertiK, SlowMist). 1% slippage tolerance. No fees from United Stables.
             </div>
           </>
         )}
