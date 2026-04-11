@@ -14,7 +14,7 @@ const MUTED = '#6B6B6B';
 const BOOK_GBP = 10.39;
 const GBP_USD = 1.296;
 const BOOK_USD = +(BOOK_GBP * GBP_USD).toFixed(2);
-const CONTRACT_SHORT = '0xcE244...6666';
+const CONTRACT_SHORT = '0xcE24439F2D9C6a2289F741120FE202248B666666';
 
 // ─── U Logo SVG ───────────────────────────────────────────────────────────────
 function ULogo({ size = 28 }: { size?: number }) {
@@ -747,7 +747,7 @@ export default function FreedomOfMoneyPage() {
           <div className="fade-up fade-up-1" style={{ marginBottom: 20 }}>
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 16px', borderRadius: 50, border: `1px solid ${GOLD_DIM}`, background: 'rgba(233,210,118,0.08)', marginBottom: 32 }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: GOLD, display: 'inline-block' }} />
-              <span style={{ fontSize: 11, color: GOLD, fontWeight: 600, letterSpacing: 1.5, textTransform: 'uppercase' }}>Campaign Proposal · April 2026</span>
+              <span style={{ fontSize: 11, color: GOLD, fontWeight: 600, letterSpacing: 1.5, textTransform: 'uppercase' }}>Live Campaign · April 2026</span>
             </div>
           </div>
 
@@ -872,8 +872,8 @@ export default function FreedomOfMoneyPage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 24 }}>
             {[
               { label: 'Treasury Balance', value: '0', unit: '$U', note: '0x7B72…E85B' },
-              { label: 'Books Ordered', value: '0', unit: '', note: 'Launch pending' },
-              { label: 'Donated to Charity', value: '0', unit: '$U', note: 'Recipient TBD' },
+              { label: 'Books Ordered', value: '0', unit: '', note: 'Orders open' },
+              { label: 'Donated to Charity', value: '0', unit: '$U', note: 'On-chain verifiable' },
               { label: 'On-chain Txs', value: '0', unit: '', note: 'BscScan verified' },
             ].map(({ label, value, unit, note }, i) => (
               <div key={i} style={{ background: '#fff', border: `1px solid ${GOLD_DIM}`, borderRadius: 14, padding: 20 }}>
@@ -977,7 +977,7 @@ export default function FreedomOfMoneyPage() {
             $U Contract (BNB Chain): <span style={{ fontFamily: 'monospace', color: GOLD }}>{CONTRACT_SHORT}</span> · PeckShield #2025-157
           </div>
           <div style={{ fontSize: 11, color: '#CCC' }}>
-            Internal proposal · April 2026 · For team review only
+            United Stables · April 2026 · <a href="https://github.com/Moya-2025-Moya/-U-X-Freedom-of-Money" target="_blank" rel="noreferrer" style={{ color: '#CCC', textDecoration: 'underline' }}>Open source ↗</a>
           </div>
         </footer>
 
