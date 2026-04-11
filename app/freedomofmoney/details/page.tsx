@@ -11,9 +11,6 @@ const BG = '#FAFAF8';
 const TEXT = '#1A1A1A';
 const MUTED = '#6B6B6B';
 
-const BOOK_GBP = 10.39;
-const GBP_USD = 1.296;
-const BOOK_USD = +(BOOK_GBP * GBP_USD).toFixed(2);
 const CONTRACT_SHORT = '0xcE24439F2D9C6a2289F741120FE202248B666666';
 
 // ─── U Logo ───────────────────────────────────────────────────────────────────
@@ -315,7 +312,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'How does the purchase work?',
-    a: `User connects their BSC wallet and sends ${BOOK_USD} $U to the Treasury address. Once confirmed on-chain, 100% of the $U is donated to charity. We purchase the book and ship it to the user's door within 1-3 days. The tx hash is used to track order status.`,
+    a: `User selects their shipping region, connects their BSC wallet, and sends the regional Amazon price in $U to the Treasury address. Once confirmed on-chain, 100% of the $U is donated to charity. We purchase the book and ship it to the user's door within 1-3 days. The tx hash is used to track order status.`,
   },
   {
     q: 'How is the money transparent?',

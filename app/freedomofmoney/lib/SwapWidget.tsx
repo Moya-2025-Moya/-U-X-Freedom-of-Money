@@ -8,7 +8,7 @@ import {
   usePublicClient,
 } from 'wagmi';
 import { formatUnits, type PublicClient } from 'viem';
-import { U_CONTRACT, BOOK_U_AMOUNT, BOOK_USD } from './constants';
+import { U_CONTRACT, BOOK_U_AMOUNT } from './constants';
 
 // ─── Addresses (BSC Mainnet) ──────────────────────────────────────────────────
 const ROUTER = '0x13f4EA83D0bd40E75C8222255bc855a974568Dd4' as `0x${string}`;
@@ -102,6 +102,7 @@ const ERC20_APPROVE_ABI = [
 async function getBestQuote(
   client: PublicClient,
   tokenIn: `0x${string}`,
+  amountOut: bigint,
 ): Promise<{ amountIn: bigint; fee: number } | null> {
   for (const fee of FEE_TIERS) {
     try {
@@ -109,7 +110,7 @@ async function getBestQuote(
         address: QUOTER,
         abi: QUOTER_ABI,
         functionName: 'quoteExactOutputSingle',
-        args: [{ tokenIn, tokenOut: U_CONTRACT, amount: BOOK_U_AMOUNT, fee, sqrtPriceLimitX96: BigInt(0) }],
+        args: [{ tokenIn, tokenOut: U_CONTRACT, amount: amountOut, fee, sqrtPriceLimitX96: BigInt(0) }],
       });
       const amountIn = (result.result as [bigint, bigint, number, bigint])[0];
       if (amountIn > BigInt(0)) return { amountIn, fee };
@@ -128,9 +129,16 @@ const TEXT     = '#1A1A1A';
 const MUTED    = '#6B6B6B';
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export function SwapWidget({ onSwapped, onCancel }: { onSwapped: () => void; onCancel: () => void }) {
+export function SwapWidget({ onSwapped, onCancel, amountU: customAmountU }: {
+  onSwapped: () => void;
+  onCancel: () => void;
+  amountU?: bigint;
+}) {
   const { address } = useAccount();
   const client = usePublicClient();
+
+  const targetAmountU = customAmountU ?? BOOK_U_AMOUNT;
+  const targetAmountUsd = Number(targetAmountU) / 1e18;
 
   const [token, setToken]           = useState<Token>(TOKENS[0]);
   const [quote, setQuote]           = useState<{ amountIn: bigint; fee: number } | null>(null);
@@ -151,14 +159,14 @@ export function SwapWidget({ onSwapped, onCancel }: { onSwapped: () => void; onC
     setQuoting(true);
     setQuoteError('');
     setQuote(null);
-    const result = await getBestQuote(client as PublicClient, token.address);
+    const result = await getBestQuote(client as PublicClient, token.address, targetAmountU);
     if (result) {
       setQuote(result);
     } else {
       setQuoteError(`No liquidity pool found for ${token.symbol} → $U on PancakeSwap.`);
     }
     setQuoting(false);
-  }, [client, token]);
+  }, [client, token, targetAmountU]);
 
   useEffect(() => { fetchQuote(); }, [fetchQuote]);
 
@@ -195,7 +203,7 @@ export function SwapWidget({ onSwapped, onCancel }: { onSwapped: () => void; onC
           tokenOut: U_CONTRACT,
           fee: quote.fee,
           recipient: address,
-          amountOut: BOOK_U_AMOUNT,
+          amountOut: targetAmountU,
           amountInMaximum: amountInMax,
           sqrtPriceLimitX96: BigInt(0),
         }],
@@ -211,7 +219,7 @@ export function SwapWidget({ onSwapped, onCancel }: { onSwapped: () => void; onC
           tokenOut: U_CONTRACT,
           fee: quote.fee,
           recipient: address,
-          amountOut: BOOK_U_AMOUNT,
+          amountOut: targetAmountU,
           amountInMaximum: amountInMax,
           sqrtPriceLimitX96: BigInt(0),
         }],
@@ -271,7 +279,7 @@ export function SwapWidget({ onSwapped, onCancel }: { onSwapped: () => void; onC
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: 12, color: MUTED }}>You receive (exact)</span>
-            <span style={{ fontSize: 16, fontWeight: 800, color: GOLD }}>{BOOK_USD} $U</span>
+            <span style={{ fontSize: 16, fontWeight: 800, color: GOLD }}>{targetAmountUsd.toFixed(2)} $U</span>
           </div>
           {quote && (
             <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${GOLD_DIM}`, fontSize: 11, color: MUTED }}>
@@ -326,8 +334,8 @@ export function SwapWidget({ onSwapped, onCancel }: { onSwapped: () => void; onC
             >
               {swapping    ? 'Waiting for wallet…'
                : swapWaiting ? 'Confirming swap…'
-               : needsApprove ? `2. Swap ${amountDisplay} → ${BOOK_USD} $U`
-               : `Swap ${amountDisplay} → ${BOOK_USD} $U`}
+               : needsApprove ? `2. Swap ${amountDisplay} → ${targetAmountUsd.toFixed(2)} $U`
+               : `Swap ${amountDisplay} → ${targetAmountUsd.toFixed(2)} $U`}
             </button>
           </div>
         )}

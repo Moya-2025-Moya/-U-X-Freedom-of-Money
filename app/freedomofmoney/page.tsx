@@ -8,9 +8,6 @@ const BG = '#FAFAF8';
 const TEXT = '#1A1A1A';
 const MUTED = '#6B6B6B';
 
-const BOOK_GBP = 10.39;
-const GBP_USD = 1.296;
-const BOOK_USD = +(BOOK_GBP * GBP_USD).toFixed(2);
 const CONTRACT_SHORT = '0xcE24439F2D9C6a2289F741120FE202248B666666';
 
 // ─── U Logo ───────────────────────────────────────────────────────────────────
@@ -199,12 +196,13 @@ export default function FreedomOfMoneyPage() {
                 </p>
               </div>
 
-              {/* Price */}
-              <div style={{ background: '#fff', border: `1px solid ${GOLD_DIM}`, borderRadius: 12, padding: '12px 18px', display: 'inline-flex', alignItems: 'baseline', gap: 8, alignSelf: 'flex-start' }}>
-                <span style={{ fontSize: 10, color: MUTED, letterSpacing: 1, textTransform: 'uppercase' as const }}>Price</span>
-                <span style={{ fontSize: 28, fontWeight: 900, color: TEXT, letterSpacing: -1 }}>{BOOK_USD}</span>
-                <span style={{ fontSize: 15, fontWeight: 700, color: GOLD }}>$U</span>
-                <span style={{ fontSize: 12, color: MUTED }}>≈ £{BOOK_GBP}</span>
+              {/* Lowest Price badge */}
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px', borderRadius: 50, border: `1px solid ${GOLD_DIM}`, background: 'rgba(233,210,118,0.06)', alignSelf: 'flex-start' }}>
+                <svg width={13} height={13} viewBox="0 0 24 24" fill="none">
+                  <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" stroke={GOLD} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                  <line x1="7" y1="7" x2="7.01" y2="7" stroke={GOLD} strokeWidth={2.5} strokeLinecap="round" />
+                </svg>
+                <span style={{ fontSize: 12, fontWeight: 600, color: TEXT }}>Lowest price · Varies by region</span>
               </div>
 
               {/* Stats */}
@@ -258,7 +256,7 @@ export default function FreedomOfMoneyPage() {
                 </thead>
                 <tbody>
                   <tr>
-                    <td colSpan={4} style={{ padding: '40px 20px', textAlign: 'center', color: MUTED, fontSize: 13 }}>
+                    <td colSpan={3} style={{ padding: '40px 20px', textAlign: 'center', color: MUTED, fontSize: 13 }}>
                       No orders yet — be the first.
                     </td>
                   </tr>
@@ -295,6 +293,11 @@ export default function FreedomOfMoneyPage() {
             {/* Contract */}
             <div style={{ fontSize: 10, color: '#BBB', textAlign: 'center' }}>
               $U: <span style={{ fontFamily: 'monospace', color: MUTED }}>{CONTRACT_SHORT}</span> · PeckShield #2025-157
+            </div>
+
+            {/* Disclaimer */}
+            <div style={{ fontSize: 10, color: '#BBB', textAlign: 'center', maxWidth: 560, lineHeight: 1.6 }}>
+              Shipping availability varies by region. Orders to certain restricted destinations cannot be fulfilled — details shown at checkout.
             </div>
 
           </div>
