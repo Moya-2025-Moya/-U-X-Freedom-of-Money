@@ -3,7 +3,7 @@ import { getSupabaseAdmin } from '@/app/lib/supabase-server';
 
 const STATUSES = ['pending', 'ordered', 'shipped', 'delivered', 'cancelled'];
 
-// GET — list all orders (optionally filtered by status)
+// GET - list all orders (optionally filtered by status)
 export async function GET(req: NextRequest) {
   const status = req.nextUrl.searchParams.get('status');
   const supabase = getSupabaseAdmin();
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ orders: data ?? [] });
 }
 
-// PATCH — update status and/or amazon_tracking for one order
+// PATCH - update status and/or amazon_tracking for one order
 export async function PATCH(req: NextRequest) {
   const body = await req.json().catch(() => null);
   if (!body?.id) return NextResponse.json({ error: 'Missing order id' }, { status: 400 });

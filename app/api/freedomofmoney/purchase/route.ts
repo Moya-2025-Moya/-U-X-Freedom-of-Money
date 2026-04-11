@@ -4,10 +4,10 @@ import { bsc } from 'viem/chains';
 import { getSupabaseAdmin } from '@/app/lib/supabase-server';
 import { U_CONTRACT, TREASURY, BOOK_U_AMOUNT } from '@/app/freedomofmoney/lib/constants';
 
-// ─── On-chain client — dedicated RPC, same as frontend ───────────────────────
+// ─── On-chain client - dedicated RPC, same as frontend ───────────────────────
 const bscClient = createPublicClient({
   chain: bsc,
-  transport: http('https://bnb-mainnet.g.alchemy.com/v2/TBTri88WcPoFSqH9luU86'),
+  transport: http(process.env.BSC_RPC_URL || 'https://bsc-dataseed1.binance.org'),
 });
 
 const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' as const;
@@ -28,16 +28,18 @@ async function verifyPaymentTx(
     ]);
   } catch (e) {
     const msg = e instanceof Error ? e.message : '';
-    if (msg === 'timeout') return 'Blockchain verification timed out — please try again';
-    return 'Transaction not found on BNB Chain';
+    if (msg === 'timeout') return 'Blockchain verification timed out - please try again';
+    console.error('[verifyPaymentTx] getTransactionReceipt failed:', msg, 'tx:', txHash);
+    return 'Payment verification failed';
   }
 
-  if (!receipt) return 'Transaction not found on BNB Chain';
-  if (receipt.status !== 'success') return 'Transaction failed on-chain';
-
-  // The tx must be a call to the $U contract
-  if (receipt.to?.toLowerCase() !== U_CONTRACT.toLowerCase()) {
-    return 'Transaction is not a $U token transfer';
+  if (!receipt) {
+    console.error('[verifyPaymentTx] receipt is null for tx:', txHash);
+    return 'Payment verification failed';
+  }
+  if (receipt.status !== 'success') {
+    console.error('[verifyPaymentTx] tx failed on-chain:', txHash);
+    return 'Payment verification failed';
   }
 
   // Find the Transfer log: $U → TREASURY
@@ -48,24 +50,30 @@ async function verifyPaymentTx(
       log.topics.length >= 3,
   );
 
-  if (!transferLog) return 'No $U Transfer event found in transaction';
+  if (!transferLog) {
+    console.error('[verifyPaymentTx] no Transfer event found in tx:', txHash);
+    return 'Payment verification failed';
+  }
 
   const toAddr  = ('0x' + (transferLog.topics[2] as string).slice(26)).toLowerCase();
   const value   = BigInt(transferLog.data);
 
   if (toAddr !== TREASURY.toLowerCase()) {
-    return 'Transfer recipient is not the United Stables treasury';
+    console.error('[verifyPaymentTx] wrong recipient:', toAddr, 'expected:', TREASURY.toLowerCase(), 'tx:', txHash);
+    return 'Payment verification failed';
   }
 
   if (value < BOOK_U_AMOUNT) {
-    return `Insufficient payment: received ${value} but required ${BOOK_U_AMOUNT}`;
+    console.error('[verifyPaymentTx] insufficient payment:', value.toString(), 'required:', BOOK_U_AMOUNT.toString(), 'tx:', txHash);
+    return 'Payment verification failed';
   }
 
-  // Verify sender matches connected wallet (optional — only when wallet_address is provided)
+  // Verify sender matches connected wallet (optional - only when wallet_address is provided)
   if (senderWallet) {
     const fromAddr = ('0x' + (transferLog.topics[1] as string).slice(26)).toLowerCase();
     if (fromAddr !== senderWallet.toLowerCase()) {
-      return 'Transaction sender does not match the connected wallet address';
+      console.error('[verifyPaymentTx] sender mismatch:', fromAddr, 'expected:', senderWallet.toLowerCase(), 'tx:', txHash);
+      return 'Payment verification failed';
     }
   }
 
@@ -100,7 +108,7 @@ function validate(body: Record<string, unknown>): string | null {
 
   if (str(body.notes).length > 1000) return 'Notes must be under 1000 characters';
 
-  // tx_hash is required — no payment, no order
+  // tx_hash is required - no payment, no order
   if (!str(body.tx_hash)) return 'Transaction hash is required';
   if (!/^0x[0-9a-f]{64}$/.test(str(body.tx_hash))) return 'Invalid transaction hash format';
 
@@ -127,6 +135,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: validationError }, { status: 400 });
     }
 
+    const RESTRICTED_COUNTRIES = ['china', 'mainland china', 'prc', "people's republic of china", '中国', '中华人民共和国', 'north korea', 'dprk', 'iran', 'syria', 'cuba', 'crimea'];
+
+    const country = (body.country as string).trim().toLowerCase();
+    if (RESTRICTED_COUNTRIES.some(r => country.includes(r))) {
+      return NextResponse.json({ error: 'Orders cannot be fulfilled to this region' }, { status: 400 });
+    }
+
     const email = (body.email as string).trim().toLowerCase();
 
     if (await isRateLimited(email)) {
@@ -144,7 +159,7 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseAdmin();
 
-    // Duplicate tx guard — one tx hash can only fund one order
+    // Duplicate tx guard - one tx hash can only fund one order
     const { data: existing } = await supabase
       .from('book_orders')
       .select('id')
@@ -163,6 +178,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: txError }, { status: 400 });
     }
 
+    // Try insert first
     const { data, error } = await supabase
       .from('book_orders')
       .insert({
@@ -178,12 +194,24 @@ export async function POST(req: NextRequest) {
         notes:          (body.notes as string)?.trim() || null,
         tx_hash,
         wallet_address,
+        amount_u:       Number(BOOK_U_AMOUNT) / 1e18,
         status:         'pending',
       })
       .select('id')
       .single();
 
     if (error) {
+      // If unique violation on tx_hash, return the existing order (idempotent retry)
+      if (error.code === '23505' && error.message?.includes('tx_hash')) {
+        const { data: existing } = await supabase
+          .from('book_orders')
+          .select('id')
+          .eq('tx_hash', tx_hash)
+          .single();
+        if (existing) {
+          return NextResponse.json({ success: true, id: existing.id });
+        }
+      }
       console.error('[book_orders] insert error:', error);
       return NextResponse.json({ error: 'Failed to save order' }, { status: 500 });
     }

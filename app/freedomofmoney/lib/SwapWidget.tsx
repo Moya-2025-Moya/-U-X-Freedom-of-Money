@@ -73,7 +73,7 @@ export function SwapWidget({
             <svg width={15} height={15} viewBox="0 0 24 24" fill="none">
               <path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" stroke={GOLD} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            <span style={{ fontSize: 13, fontWeight: 700 }}>Swap to $U — via PancakeSwap</span>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>Swap to $U - via PancakeSwap</span>
           </div>
           <button onClick={onCancel} style={{ background: 'none', border: 'none', cursor: 'pointer', color: MUTED, fontSize: 20, lineHeight: 1, padding: 0 }}>×</button>
         </div>
@@ -179,7 +179,7 @@ export function SwapWidget({
             {clicked && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <p style={{ fontSize: 12, color: MUTED, margin: 0, lineHeight: 1.7 }}>
-                  Complete the swap on PancakeSwap, then come back — your $U balance will update automatically.
+                  Complete the swap on PancakeSwap, then come back - your $U balance will update automatically.
                   {isETH && <> After the swap, also <strong>switch your wallet to BNB Chain</strong>.</>}
                 </p>
                 {isETH && (

@@ -495,7 +495,7 @@ function Step3({
           {balanceU !== null && (
             <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${GOLD_DIM}`, fontSize: 12, color: hasEnough ? '#16A34A' : '#DC2626' }}>
               Your $U balance: <strong>{balanceU.toFixed(2)}</strong>
-              {hasEnough ? ' ✓ sufficient' : ` — need ${shortfall.toFixed(2)} more`}
+              {hasEnough ? ' ✓ sufficient' : ` - need ${shortfall.toFixed(2)} more`}
             </div>
           )}
         </div>
@@ -504,7 +504,7 @@ function Step3({
         </p>
       </div>
 
-      {/* Swap widget — shown only when balance is insufficient */}
+      {/* Swap widget - shown only when balance is insufficient */}
       {balanceU !== null && !hasEnough && (
         <div>
           <button
@@ -573,7 +573,7 @@ function Step3({
       )}
       {submitState === 'error' && (
         <div style={{ padding: '12px 16px', borderRadius: 10, background: '#FEF2F2', border: '1px solid #FECACA', fontSize: 13, color: '#DC2626' }}>
-          Order saved failed: {submitError} — your payment went through. Please contact support with your tx hash.
+          Order saved failed: {submitError} - your payment went through. Please contact support with your tx hash.
         </div>
       )}
 

@@ -4,6 +4,13 @@ import { getSupabaseAdmin } from '@/app/lib/supabase-server';
 const TX_RE     = /^0x[0-9a-fA-F]{64}$/;
 const WALLET_RE = /^0x[0-9a-fA-F]{40}$/;
 
+function maskName(name: string): string {
+  return name.split(' ').map(part => {
+    if (part.length <= 2) return part[0] + '*';
+    return part[0] + '*'.repeat(part.length - 2) + part[part.length - 1];
+  }).join(' ');
+}
+
 export async function GET(req: NextRequest) {
   const q = req.nextUrl.searchParams.get('q')?.trim() ?? '';
   if (!q) return NextResponse.json({ error: 'Missing query parameter' }, { status: 400 });
@@ -28,5 +35,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Lookup failed' }, { status: 500 });
   }
 
-  return NextResponse.json({ orders: data ?? [] });
+  const maskedOrders = (data ?? []).map(o => ({
+    ...o,
+    full_name: maskName(o.full_name),
+  }));
+  return NextResponse.json({ orders: maskedOrders });
 }

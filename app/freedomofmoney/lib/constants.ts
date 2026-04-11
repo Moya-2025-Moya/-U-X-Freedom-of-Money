@@ -13,7 +13,7 @@ export const BOOK_USD = +(BOOK_GBP * GBP_USD).toFixed(2);
 // BigInt representation for on-chain transfer (18 decimals)
 export const BOOK_U_AMOUNT = BigInt(Math.round(BOOK_USD * 1e6)) * BigInt(10) ** BigInt(12);
 
-// Minimal ERC-20 ABI — only what we need
+// Minimal ERC-20 ABI - only what we need
 export const ERC20_ABI = [
   {
     name: 'transfer',
