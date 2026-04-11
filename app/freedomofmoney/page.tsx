@@ -57,35 +57,6 @@ function BookCover({ scale = 1 }: { scale?: number }) {
   );
 }
 
-// ─── Browser Frame ────────────────────────────────────────────────────────────
-function BrowserFrame({ children, url = 'freedomofmoney.xyz' }: { children: React.ReactNode; url?: string }) {
-  return (
-    <div style={{ border: '1px solid #E5E5E5', borderRadius: 12, overflow: 'hidden', background: '#fff', boxShadow: '0 8px 40px rgba(0,0,0,0.08)' }}>
-      <div style={{ background: '#F5F5F3', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #E8E8E8' }}>
-        <div style={{ display: 'flex', gap: 5 }}>
-          {['#FF5F57', '#FEBC2E', '#28C840'].map((c, i) => (
-            <div key={i} style={{ width: 10, height: 10, borderRadius: '50%', background: c }} />
-          ))}
-        </div>
-        <div style={{ flex: 1, background: '#EBEBEB', borderRadius: 6, padding: '3px 10px', fontSize: 11, color: '#666', textAlign: 'center' as const }}>
-          {url}
-        </div>
-      </div>
-      <div>{children}</div>
-    </div>
-  );
-}
-
-// ─── Step Badge ───────────────────────────────────────────────────────────────
-function StepBadge({ n, total }: { n: number; total: number }) {
-  return (
-    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-      <div style={{ width: 32, height: 32, borderRadius: '50%', background: `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: '#fff' }}>{n}</div>
-      <span style={{ fontSize: 12, color: MUTED, letterSpacing: 2, textTransform: 'uppercase' as const }}>Step {n} of {total}</span>
-    </div>
-  );
-}
-
 // ─── Section Label ────────────────────────────────────────────────────────────
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -286,173 +257,6 @@ function AllInOneClickDiagram() {
   );
 }
 
-// ─── Swap Flow Diagram ────────────────────────────────────────────────────────
-function SwapFlowDiagram() {
-  const tokens = [
-    { name: 'USDT', y: 12 },
-    { name: 'USDC', y: 34 },
-    { name: 'BNB',  y: 56 },
-    { name: 'ETH',  y: 78 },
-    { name: 'SOL',  y: 100 },
-  ];
-  const PSX = 148, PSY = 56;
-  const UX = 238, UY = 56;
-
-  return (
-    <svg width="100%" viewBox="0 0 264 112" style={{ display: 'block' }}>
-      <defs>
-        <linearGradient id="sd-gold" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#E9D276" /><stop offset="100%" stopColor="#A18B2F" />
-        </linearGradient>
-        <radialGradient id="sd-vault" cx="38%" cy="35%" r="65%">
-          <stop offset="0%" stopColor="#E9D276" /><stop offset="100%" stopColor="#A18B2F" />
-        </radialGradient>
-        {tokens.map(({ y }, i) => {
-          const d = y === PSY
-            ? `M 62 ${y} L ${PSX - 23} ${y}`
-            : `M 62 ${y} C 104 ${y} ${PSX - 23} ${PSY + (y - PSY) * 0.28} ${PSX - 23} ${PSY}`;
-          return <path key={i} id={`sd-in-${i}`} d={d} />;
-        })}
-        <path id="sd-out" d={`M ${PSX + 23} ${PSY} L ${UX - 20} ${UY}`} />
-      </defs>
-
-      {/* Input dashed paths */}
-      {tokens.map(({ y }, i) => {
-        const d = y === PSY
-          ? `M 62 ${y} L ${PSX - 23} ${y}`
-          : `M 62 ${y} C 104 ${y} ${PSX - 23} ${PSY + (y - PSY) * 0.28} ${PSX - 23} ${PSY}`;
-        return <path key={i} d={d} stroke="rgba(161,139,47,0.22)" strokeWidth="1.2" fill="none" strokeDasharray="3 2" />;
-      })}
-      {/* Output path */}
-      <path d={`M ${PSX + 23} ${PSY} L ${UX - 20} ${UY}`} stroke="rgba(161,139,47,0.45)" strokeWidth="1.5" fill="none" strokeDasharray="3 2" />
-
-      {/* Animated dots: each token → PancakeSwap */}
-      {tokens.map((_, i) => (
-        <circle key={i} r="2.5" fill="url(#sd-gold)">
-          <animateMotion dur="1.6s" repeatCount="indefinite" begin={`${i * 0.32}s`} calcMode="linear">
-            <mpath href={`#sd-in-${i}`} xlinkHref={`#sd-in-${i}`} />
-          </animateMotion>
-          <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.08;0.88;1" dur="1.6s" repeatCount="indefinite" begin={`${i * 0.32}s`} />
-        </circle>
-      ))}
-      {/* Animated dots: PancakeSwap → $U (faster, denser) */}
-      {[0, 0.27, 0.54].map((delay, i) => (
-        <circle key={i} r="3" fill="url(#sd-gold)">
-          <animateMotion dur="0.8s" repeatCount="indefinite" begin={`${delay}s`} calcMode="linear">
-            <mpath href="#sd-out" xlinkHref="#sd-out" />
-          </animateMotion>
-          <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.85;1" dur="0.8s" repeatCount="indefinite" begin={`${delay}s`} />
-        </circle>
-      ))}
-
-      {/* Token pills */}
-      {tokens.map(({ name, y }) => (
-        <g key={name}>
-          <rect x="0" y={y - 10} width="60" height="20" rx="10" fill="#F2F2F0" stroke="rgba(161,139,47,0.28)" strokeWidth="1" />
-          <text x="30" y={y + 4.5} textAnchor="middle" fontSize="9.5" fontWeight="700" fill="#3a3a3a" fontFamily="system-ui, sans-serif">{name}</text>
-        </g>
-      ))}
-
-      {/* "more" pill */}
-      <g>
-        <text x="30" y="116" textAnchor="middle" fontSize="8.5" fill="#999" fontFamily="system-ui">+ more</text>
-      </g>
-
-      {/* PancakeSwap node */}
-      <circle cx={PSX} cy={PSY} r="23" fill="#FFF9F0" stroke="rgba(161,139,47,0.35)" strokeWidth="1.5" />
-      <image href="/pancakeswap-logo.svg" x={PSX - 16} y={PSY - 18} width="32" height="32" />
-
-      {/* $U node */}
-      <circle cx={UX} cy={UY} r="20" fill="url(#sd-vault)" />
-      <text x={UX} y={UY + 6} textAnchor="middle" fontSize="15" fontWeight="900" fill="#fff" fontFamily="system-ui, sans-serif">U</text>
-    </svg>
-  );
-}
-
-// ─── Payment Step (own state for tab toggle) ──────────────────────────────────
-function PaymentStep() {
-  const [tab, setTab] = useState<'direct' | 'convert'>('direct');
-  return (
-    <div style={{ padding: 24 }}>
-      {/* Tab bar */}
-      <div style={{ display: 'flex', marginBottom: 16, border: `1px solid ${GOLD_DIM}`, borderRadius: 8, overflow: 'hidden' }}>
-        {(['direct', 'convert'] as const).map((t) => (
-          <button key={t} onClick={() => setTab(t)} style={{
-            flex: 1, padding: '8px 0', border: 'none', cursor: 'pointer',
-            fontSize: 12, fontWeight: 600, transition: 'all 0.15s',
-            background: tab === t ? TEXT : 'transparent',
-            color: tab === t ? '#fff' : MUTED,
-          }}>
-            {t === 'direct' ? 'Pay with $U' : 'Convert & Pay'}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'direct' ? (
-        <>
-          <div style={{ fontSize: 14, fontWeight: 600, color: TEXT, marginBottom: 4 }}>Complete Payment</div>
-          <div style={{ fontSize: 11, color: MUTED, marginBottom: 18 }}>Connect your BSC wallet to transfer $U</div>
-          <div style={{ background: '#F7F5F0', borderRadius: 10, padding: 14, marginBottom: 12, border: `1px solid ${GOLD_DIM}` }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span style={{ fontSize: 11, color: MUTED }}>Amount</span>
-              <span style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>{BOOK_USD} <span style={{ color: GOLD }}>$U</span></span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span style={{ fontSize: 11, color: MUTED }}>To (Treasury)</span>
-              <span style={{ fontSize: 10, color: MUTED, fontFamily: 'monospace' }}>0x7B72…E85B</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: 11, color: MUTED }}>Network</span>
-              <span style={{ fontSize: 11, color: TEXT }}>BNB Chain</span>
-            </div>
-          </div>
-          <div style={{ fontSize: 10, color: MUTED, marginBottom: 14, padding: '8px 10px', background: '#F0F0F0', borderRadius: 6, lineHeight: 1.5 }}>
-            $U contract: <span style={{ fontFamily: 'monospace', color: GOLD }}>{CONTRACT_SHORT}</span><br />
-            PeckShield Audit #2025-157 · No Critical/High findings
-          </div>
-          <button style={{ width: '100%', padding: '11px 0', background: `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`, color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', letterSpacing: 0.3 }}>
-            Connect Wallet & Pay
-          </button>
-        </>
-      ) : (
-        <>
-          <div style={{ background: '#F9F8F5', border: `1px solid ${GOLD_DIM}`, borderRadius: 10, padding: '12px 12px 8px', marginBottom: 14 }}>
-            <div style={{ fontSize: 10, color: MUTED, letterSpacing: 1, textTransform: 'uppercase' as const, marginBottom: 8, fontWeight: 600 }}>Any token → $U</div>
-            <SwapFlowDiagram />
-          </div>
-          <div style={{ fontSize: 11, color: MUTED, marginBottom: 14 }}>Any token, auto-converted to $U via PancakeSwap before payment.</div>
-          <div style={{ background: '#F7F5F0', borderRadius: 10, padding: 14, marginBottom: 6, border: `1px solid ${GOLD_DIM}` }}>
-            <div style={{ fontSize: 10, color: MUTED, marginBottom: 6 }}>You Pay</div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 18, fontWeight: 700, color: TEXT }}>{BOOK_USD}</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: '#fff', border: '1px solid #E5E5E5', borderRadius: 6, padding: '5px 10px', fontSize: 12, fontWeight: 600, color: TEXT }}>
-                USDT / USDC / BNB / ETH <span style={{ color: MUTED, fontSize: 10, marginLeft: 2 }}>▾</span>
-              </div>
-            </div>
-          </div>
-          <div style={{ textAlign: 'center' as const, margin: '5px 0', color: GOLD, fontSize: 15, fontWeight: 600 }}>↕</div>
-          <div style={{ background: '#F7F5F0', borderRadius: 10, padding: 14, marginBottom: 12, border: `1px solid ${GOLD_DIM}` }}>
-            <div style={{ fontSize: 10, color: MUTED, marginBottom: 6 }}>You Get</div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 18, fontWeight: 700, color: TEXT }}>{BOOK_USD}</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(233,210,118,0.1)', border: `1px solid ${GOLD_DIM}`, borderRadius: 6, padding: '5px 10px', fontSize: 12, fontWeight: 600, color: GOLD }}>
-                <ULogo size={13} /><span>$U</span>
-              </div>
-            </div>
-          </div>
-          <div style={{ fontSize: 10, color: MUTED, marginBottom: 14, padding: '6px 10px', background: '#F0F0F0', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={MUTED} strokeWidth="2" strokeLinecap="round"><path d="M16 3l4 4-4 4"/><path d="M20 7H4"/><path d="M8 21l-4-4 4-4"/><path d="M4 17h16"/></svg>
-            via PancakeSwap · best rate auto-selected · ~3s
-          </div>
-          <button style={{ width: '100%', padding: '11px 0', background: `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`, color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', letterSpacing: 0.3 }}>
-            Swap & Buy
-          </button>
-        </>
-      )}
-    </div>
-  );
-}
-
 // ─── Treasury Flow (pure SVG: animateMotion + mpath on identical path strings) ─
 // Money flow: Wallet → Treasury → 100% Charity (gold, animated)
 // Service:    Treasury triggers Book fulfilment (gray, no dots — not money)
@@ -576,131 +380,8 @@ const FAQ_ITEMS = [
     a: 'Frontend: Next.js + Vercel. Wallet: wagmi + viem (BSC). Orders: Supabase. Treasury data: BscScan API. Fulfilment: manual purchase and shipping by our team. $U contract: 0xcE24439F2D9C6a2289F741120FE202248B666666.',
   },
   {
-    q: 'What is the timeline?',
-    a: 'Days 1-2: Generate Treasury address, prepare Amazon accounts. Days 3-7: Frontend, Supabase, on-chain listener. Days 8-10: End-to-end test with a real order. Days 11-14: Deploy, announce on social.',
-  },
-  {
     q: 'What are the risks?',
-    a: 'Exchange rate: $U is pegged at $1, GBP/USD float is absorbed by locking price at checkout. Fulfilment delay: early-stage manual process, communicated upfront as 1-3 days. Privacy: shipping addresses stored in Supabase, basic privacy policy required.',
-  },
-  {
-    q: 'What still needs to happen before launch?',
-    a: '1. Generate dedicated Treasury MetaMask address. 2. Confirm charity recipient(s). 3. Confirm Amazon account coverage by region. 4. Decide whether to co-announce on $U official channels.',
-  },
-];
-
-// ─── Purchase Flow States ─────────────────────────────────────────────────────
-const FLOW_STEPS = [
-  {
-    title: 'Discover',
-    annotation: 'User lands on the page. The book, the cause, and the price in $U are front and centre. No exchange rate math, just a single number.',
-    ui: (
-      <div style={{ padding: 24 }}>
-        <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
-          <BookCover scale={0.72} />
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 10, letterSpacing: 3, color: GOLD, textTransform: 'uppercase' as const, marginBottom: 6, fontWeight: 600 }}>Freedom of Money</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: TEXT, lineHeight: 1.3, marginBottom: 4 }}>CZ's Memoir</div>
-            <div style={{ fontSize: 11, color: MUTED, marginBottom: 14, lineHeight: 1.5 }}>Former Binance CEO. #1 bestseller. All proceeds donated to charity.</div>
-            <div style={{ background: '#F7F5F0', borderRadius: 10, padding: '10px 14px', marginBottom: 14, border: `1px solid ${GOLD_DIM}` }}>
-              <div style={{ fontSize: 10, color: MUTED, marginBottom: 2 }}>Price</div>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                <span style={{ fontSize: 22, fontWeight: 700, color: TEXT }}>{BOOK_USD}</span>
-                <span style={{ fontSize: 14, fontWeight: 600, color: GOLD }}>$U</span>
-                <span style={{ fontSize: 11, color: MUTED }}>approx. £{BOOK_GBP}</span>
-              </div>
-            </div>
-            <button style={{ width: '100%', padding: '10px 0', background: TEXT, color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', letterSpacing: 0.3 }}>
-              Buy with $U →
-            </button>
-          </div>
-        </div>
-      </div>
-    ),
-  },
-  {
-    title: 'Ship To',
-    annotation: 'User enters their delivery address. Standard form, no wallet required yet. Supports worldwide shipping wherever Amazon delivers.',
-    ui: (
-      <div style={{ padding: 24 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: TEXT, marginBottom: 16 }}>Where should we ship your book?</div>
-        {[
-          { label: 'Full Name', placeholder: 'Satoshi Nakamoto', full: true },
-          { label: 'Address Line 1', placeholder: '21 Bitcoin Street', full: true },
-          { label: 'City', placeholder: 'London', full: false },
-          { label: 'Postcode', placeholder: 'EC1A 1BB', full: false },
-        ].map(({ label, placeholder, full }, i) => (
-          <div key={i} style={{ marginBottom: 10, display: 'inline-block', width: full ? '100%' : 'calc(50% - 5px)', marginRight: full ? 0 : (i % 2 === 0 ? 10 : 0) }}>
-            <div style={{ fontSize: 10, color: MUTED, marginBottom: 4, letterSpacing: 0.5 }}>{label}</div>
-            <div style={{ padding: '8px 12px', border: '1px solid #E5E5E5', borderRadius: 7, fontSize: 12, color: '#CCC', background: '#FAFAFA' }}>{placeholder}</div>
-          </div>
-        ))}
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 10, color: MUTED, marginBottom: 4, letterSpacing: 0.5 }}>Country</div>
-          <div style={{ padding: '8px 12px', border: '1px solid #E5E5E5', borderRadius: 7, fontSize: 12, color: '#888', display: 'flex', justifyContent: 'space-between' }}>
-            <span>United Kingdom</span><span>▾</span>
-          </div>
-        </div>
-        <button style={{ width: '100%', padding: '10px 0', background: TEXT, color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-          Continue →
-        </button>
-      </div>
-    ),
-  },
-  {
-    title: 'Pay with $U',
-    annotation: 'Wallet connection and payment. Pay directly in $U, or swap any token (USDT, USDC, BNB, ETH...) via PancakeSwap. Conversion is handled automatically before the payment hits the Treasury.',
-    ui: <PaymentStep />,
-  },
-  {
-    title: 'Confirming',
-    annotation: 'The $U transfer is submitted to the BSC mempool. User sees the tx hash immediately and can verify on BscScan while waiting for confirmation (about 3 seconds).',
-    ui: (
-      <div style={{ padding: 32, textAlign: 'center' as const }}>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ width: 60, height: 60, borderRadius: '50%', border: `3px solid ${GOLD_DIM}`, borderTop: `3px solid ${GOLD}`, margin: '0 auto 16px', animation: 'spin 1s linear infinite' }} />
-          <div style={{ fontSize: 16, fontWeight: 600, color: TEXT, marginBottom: 4 }}>Confirming on-chain</div>
-          <div style={{ fontSize: 12, color: MUTED }}>BNB Chain · ~3 seconds</div>
-        </div>
-        <div style={{ background: '#F7F5F0', borderRadius: 8, padding: '10px 14px', marginBottom: 12, textAlign: 'left' as const }}>
-          <div style={{ fontSize: 10, color: MUTED, marginBottom: 3 }}>Transaction Hash</div>
-          <div style={{ fontSize: 11, fontFamily: 'monospace', color: GOLD, wordBreak: 'break-all' as const }}>0xf4a2...c891</div>
-        </div>
-        <div style={{ fontSize: 11, color: MUTED, padding: '8px 12px', border: `1px solid ${GOLD_DIM}`, borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <span>↗</span> View on BscScan
-        </div>
-      </div>
-    ),
-  },
-  {
-    title: 'Order Confirmed',
-    annotation: 'Payment confirmed. The order is written to Supabase. User receives their order ID and tx hash. We fulfil via Amazon within 1-3 business days.',
-    ui: (
-      <div style={{ padding: 28, textAlign: 'center' as const }}>
-        <div style={{ width: 56, height: 56, borderRadius: '50%', background: `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontSize: 22, color: '#fff', fontWeight: 700 }}>
-          ✓
-        </div>
-        <div style={{ fontSize: 17, fontWeight: 700, color: TEXT, marginBottom: 4 }}>Order Confirmed</div>
-        <div style={{ fontSize: 12, color: MUTED, marginBottom: 20 }}>Your book ships within 1-3 business days</div>
-        <div style={{ background: '#F7F5F0', borderRadius: 10, padding: 14, textAlign: 'left' as const, marginBottom: 16 }}>
-          {[
-            ['Order ID', 'FOM-2025-001'],
-            ['Tx Hash', '0xf4a2...c891'],
-            ['Amount', `${BOOK_USD} $U`],
-            ['Ships to', 'London, UK'],
-          ].map(([k, v], i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: i < 3 ? 8 : 0 }}>
-              <span style={{ fontSize: 11, color: MUTED }}>{k}</span>
-              <span style={{ fontSize: 11, fontWeight: 600, color: TEXT, fontFamily: k === 'Tx Hash' || k === 'Order ID' ? 'monospace' : 'inherit' }}>{v}</span>
-            </div>
-          ))}
-        </div>
-        <div style={{ fontSize: 11, color: MUTED, padding: '8px 12px', border: `1px solid ${GOLD_DIM}`, borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <span>↗</span> Verify on BscScan
-        </div>
-      </div>
-    ),
+    a: 'Exchange rate: $U is pegged at $1, GBP/USD float is absorbed by locking price at checkout. Fulfilment: communicated upfront as 1-3 business days. Privacy: shipping addresses stored in Supabase, basic privacy policy required.',
   },
 ];
 
@@ -735,6 +416,7 @@ export default function FreedomOfMoneyPage() {
             <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
               <span style={{ fontSize: 12, color: GOLD, fontWeight: 600 }}>Freedom of Money</span>
               <a href="https://u.tech" target="_blank" rel="noreferrer" style={{ fontSize: 12, color: MUTED, textDecoration: 'none' }}>u.tech ↗</a>
+              <a href="https://github.com/Moya-2025-Moya/-U-X-Freedom-of-Money" target="_blank" rel="noreferrer" style={{ fontSize: 12, color: MUTED, textDecoration: 'none' }}>GitHub ↗</a>
             </div>
           </div>
         </nav>
@@ -787,8 +469,8 @@ export default function FreedomOfMoneyPage() {
             <a href="/freedomofmoney/purchase" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '14px 32px', background: `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`, color: '#fff', borderRadius: 50, fontSize: 14, fontWeight: 700, textDecoration: 'none', letterSpacing: 0.3, boxShadow: '0 4px 20px rgba(161,139,47,0.35)' }}>
               Order Your Copy →
             </a>
-            <a href="#flow" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '14px 32px', background: TEXT, color: '#fff', borderRadius: 50, fontSize: 14, fontWeight: 600, textDecoration: 'none', letterSpacing: 0.3 }}>
-              See the full experience ↓
+            <a href="/freedomofmoney/track" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '14px 32px', background: TEXT, color: '#fff', borderRadius: 50, fontSize: 14, fontWeight: 600, textDecoration: 'none', letterSpacing: 0.3 }}>
+              Track Order ↓
             </a>
           </div>
         </section>
@@ -831,31 +513,6 @@ export default function FreedomOfMoneyPage() {
             <h2 style={{ textAlign: 'center', fontSize: 'clamp(24px, 3.5vw, 36px)', fontWeight: 700, marginBottom: 8, letterSpacing: -0.8 }}>Any Token, One Click.</h2>
             <p style={{ textAlign: 'center', color: MUTED, fontSize: 14, marginBottom: 40 }}>PancakeSwap converts your token to $U automatically before payment.</p>
             <AllInOneClickDiagram />
-          </div>
-        </section>
-
-        {/* PURCHASE FLOW */}
-        <section id="flow" style={{ padding: '80px 24px', background: '#fff' }}>
-          <div style={{ maxWidth: 900, margin: '0 auto' }}>
-            <SectionLabel>User Journey</SectionLabel>
-            <h2 style={{ textAlign: 'center', fontSize: 'clamp(28px, 4vw, 42px)', fontWeight: 700, marginBottom: 12, letterSpacing: -1 }}>The Purchase Experience</h2>
-            <p style={{ textAlign: 'center', color: MUTED, fontSize: 14, marginBottom: 64 }}>Scroll through each step of the user flow as it will appear in production.</p>
-
-            {FLOW_STEPS.map((step, i) => {
-              const isEven = i % 2 === 0;
-              return (
-                <div key={i} style={{ display: 'flex', gap: 40, alignItems: 'center', marginBottom: 80, flexDirection: isEven ? 'row' : 'row-reverse', flexWrap: 'wrap' }}>
-                  <div style={{ flex: '1 1 340px', minWidth: 280 }}>
-                    <BrowserFrame>{step.ui}</BrowserFrame>
-                  </div>
-                  <div style={{ flex: '1 1 220px', minWidth: 200 }}>
-                    <StepBadge n={i + 1} total={FLOW_STEPS.length} />
-                    <h3 style={{ fontSize: 22, fontWeight: 700, margin: '0 0 12px', letterSpacing: -0.5 }}>{step.title}</h3>
-                    <p style={{ fontSize: 14, color: MUTED, lineHeight: 1.7, margin: 0 }}>{step.annotation}</p>
-                  </div>
-                </div>
-              );
-            })}
           </div>
         </section>
 
