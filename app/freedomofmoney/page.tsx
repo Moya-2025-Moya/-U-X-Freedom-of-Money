@@ -1,4 +1,39 @@
-'use client';
+import { createPublicClient, http, formatUnits } from 'viem';
+import { bsc } from 'viem/chains';
+import { getSupabaseAdmin } from '@/app/lib/supabase-server';
+import { U_CONTRACT as U_ADDR, TREASURY as TREASURY_ADDR, ERC20_ABI } from './lib/constants';
+
+// Revalidate every 60 seconds (ISR)
+export const revalidate = 60;
+
+// ─── Server-side data fetching ────────────────────────────────────────────────
+const bscClient = createPublicClient({
+  chain: bsc,
+  transport: http('https://bnb-mainnet.g.alchemy.com/v2/TBTri88WcPoFSqH9luU86'),
+});
+
+async function getStats() {
+  const [balanceRaw, orderData] = await Promise.allSettled([
+    bscClient.readContract({
+      address: U_ADDR,
+      abi: ERC20_ABI,
+      functionName: 'balanceOf',
+      args: [TREASURY_ADDR],
+    }),
+    getSupabaseAdmin()
+      .from('book_orders')
+      .select('id', { count: 'exact', head: true }),
+  ]);
+
+  const balance = balanceRaw.status === 'fulfilled'
+    ? parseFloat(formatUnits(balanceRaw.value as bigint, 18)).toFixed(2)
+    : '0';
+  const orderCount = orderData.status === 'fulfilled'
+    ? (orderData.value.count ?? 0)
+    : 0;
+
+  return { balance, orderCount };
+}
 
 // ─── Palette (U brand: cream white + gold) ────────────────────────────────────
 const GOLD       = '#A18B2F';
@@ -23,15 +58,7 @@ const CSS = `
   }
   @keyframes floatY {
     0%,100% { transform: translateY(0); }
-    50%      { transform: translateY(-10px); }
-  }
-  @keyframes floatY2 {
-    0%,100% { transform: translateY(0) rotate(-1.5deg); }
-    50%      { transform: translateY(-14px) rotate(1.5deg); }
-  }
-  @keyframes glowPulse {
-    0%,100% { opacity: 0.5; transform: scale(1);   }
-    50%      { opacity: 1;   transform: scale(1.08); }
+    50%      { transform: translateY(-8px); }
   }
   @keyframes glowPulse2 {
     0%,100% { opacity: 0.4; }
@@ -40,19 +67,6 @@ const CSS = `
   @keyframes fadeInUp {
     from { opacity: 0; transform: translateY(20px); }
     to   { opacity: 1; transform: translateY(0);    }
-  }
-  @keyframes ringExpand {
-    0%   { transform: scale(0.9); opacity: 0.5; }
-    100% { transform: scale(1.55); opacity: 0;  }
-  }
-  @keyframes scanLine {
-    0%   { top: 0%; }
-    100% { top: 100%; }
-  }
-  @keyframes blobDrift {
-    0%,100% { transform: translate(0,0) scale(1); }
-    33%      { transform: translate(12px,-8px) scale(1.04); }
-    66%      { transform: translate(-8px,6px) scale(0.97); }
   }
 
   .shimmer-gold {
@@ -66,6 +80,21 @@ const CSS = `
   .hover-lift { transition: transform 0.2s, box-shadow 0.2s; }
   .hover-lift:hover { transform: translateY(-2px); }
   .fade-in { animation: fadeInUp 0.7s ease both; }
+
+  @media (max-width: 768px) {
+    .hero-flex { flex-direction: column !important; gap: 48px !important; }
+    .hero-copy { max-width: 100% !important; }
+    .stat-row { flex-direction: column !important; }
+    .nav-inner { padding: 8px 16px !important; }
+    .nav-links a { font-size: 11px !important; padding: 6px 14px !important; }
+    .hero-section { padding: 48px 20px 64px !important; }
+    .log-section { padding: 40px 16px 60px !important; }
+    .footer-links { flex-direction: column !important; }
+  }
+  @media (max-width: 480px) {
+    .book-img { width: 160px !important; height: 240px !important; }
+    .hero-title { font-size: 28px !important; }
+  }
 `;
 
 // ─── U Logo ───────────────────────────────────────────────────────────────────
@@ -86,182 +115,59 @@ function ULogo({ size = 28 }: { size?: number }) {
   );
 }
 
-// ─── Decorative background blobs (like u.tech corner orbs) ───────────────────
-function BgBlobs() {
-  return (
-    <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}>
-      {/* Top-left gold blob */}
-      <div style={{
-        position: 'absolute', top: -80, left: -80,
-        width: 380, height: 380, borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(233,210,118,0.28) 0%, transparent 70%)',
-        animation: 'blobDrift 9s ease-in-out infinite',
-        filter: 'blur(40px)',
-      }} />
-      {/* Bottom-right gold blob */}
-      <div style={{
-        position: 'absolute', bottom: -100, right: -60,
-        width: 320, height: 320, borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(161,139,47,0.18) 0%, transparent 70%)',
-        animation: 'blobDrift 11s 2s ease-in-out infinite',
-        filter: 'blur(50px)',
-      }} />
-    </div>
-  );
-}
-
-// ─── Book cover with glow rings ───────────────────────────────────────────────
+// ─── Book cover ──────────────────────────────────────────────────────────────
 function BookCover() {
   return (
     <div style={{ position: 'relative', display: 'inline-block' }}>
-      {[1, 2].map(n => (
-        <div key={n} style={{
-          position: 'absolute',
-          inset: -n * 16,
-          borderRadius: 18 + n * 8,
-          border: `1px solid rgba(161,139,47,${0.14 - n * 0.04})`,
-          animation: `ringExpand ${2.2 + n * 0.8}s ${n * 0.5}s ease-out infinite`,
-          pointerEvents: 'none',
-        }} />
-      ))}
-      <div style={{
-        position: 'absolute', inset: -32, borderRadius: 48,
-        background: 'radial-gradient(ellipse, rgba(161,139,47,0.12) 0%, transparent 70%)',
-        animation: 'glowPulse 3.5s ease-in-out infinite',
-        pointerEvents: 'none',
-      }} />
-      <div style={{
-        width: 200, height: 300, borderRadius: 8,
+      <div className="book-img" style={{
+        width: 200, height: 300, borderRadius: 6,
         overflow: 'hidden',
-        boxShadow: '8px 16px 48px rgba(0,0,0,0.18), -2px 0 0 rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.06)',
-        animation: 'floatY2 6s ease-in-out infinite',
+        boxShadow: '6px 12px 40px rgba(0,0,0,0.15), -2px 0 0 rgba(0,0,0,0.06)',
+        animation: 'floatY 5s ease-in-out infinite',
         position: 'relative',
       }}>
         <img src="/book-cover.png" alt="Freedom of Money by Changpeng Zhao" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
-        <div style={{
-          position: 'absolute', left: 0, right: 0, height: '28%',
-          background: 'linear-gradient(to bottom, transparent, rgba(255,255,255,0.06), transparent)',
-          animation: 'scanLine 4s linear infinite',
-          pointerEvents: 'none',
-        }} />
       </div>
     </div>
   );
 }
 
-// ─── Charity Orb (dark section centerpiece) ───────────────────────────────────
-function CharityOrb({ balance = '0' }: { balance?: string }) {
-  const coins = [
-    { dx: -18, delay: '0s',   dur: '2.2s', r: 11 },
-    { dx:  10, delay: '0.8s', dur: '1.9s', r:  8 },
-    { dx:  -6, delay: '1.5s', dur: '2.5s', r: 10 },
-    { dx:  20, delay: '2.1s', dur: '2.0s', r:  7 },
-  ];
-  const startY = 34;
+// ─── Charity Counter (trust-building, on-brand) ──────────────────────────────
+function CharityCounter({ balance = '0' }: { balance?: string }) {
   return (
-    <div style={{ textAlign: 'center', padding: '64px 24px 52px', position: 'relative' }}>
+    <div style={{ textAlign: 'center', padding: '56px 24px 48px' }}>
+
+      {/* Live badge */}
       <div style={{
-        position: 'absolute', left: '50%', top: '42%',
-        transform: 'translate(-50%,-50%)',
-        width: 400, height: 400, borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(233,210,118,0.10) 0%, transparent 68%)',
-        animation: 'glowPulse 4s ease-in-out infinite',
-        pointerEvents: 'none',
-      }} />
-
-      <div style={{ position: 'relative', display: 'inline-block', animation: 'floatY 5s ease-in-out infinite' }}>
-        <svg width="220" height="240" viewBox="0 0 200 220" style={{ display: 'block', overflow: 'visible' }}>
-          <defs>
-            <radialGradient id="orb-main" cx="33%" cy="28%" r="68%">
-              <stop offset="0%"   stopColor="#F7E97C" />
-              <stop offset="22%"  stopColor="#E2C040" />
-              <stop offset="55%"  stopColor="#B8880C" />
-              <stop offset="85%"  stopColor="#7A4E06" />
-              <stop offset="100%" stopColor="#4A2C02" />
-            </radialGradient>
-            <radialGradient id="orb-hi" cx="30%" cy="26%" r="40%">
-              <stop offset="0%"   stopColor="rgba(255,252,200,0.50)" />
-              <stop offset="60%"  stopColor="rgba(255,240,120,0.08)" />
-              <stop offset="100%" stopColor="rgba(255,240,120,0)" />
-            </radialGradient>
-            <radialGradient id="orb-rim" cx="50%" cy="92%" r="55%">
-              <stop offset="0%"   stopColor="rgba(230,180,60,0.25)" />
-              <stop offset="100%" stopColor="rgba(230,180,60,0)" />
-            </radialGradient>
-            <radialGradient id="coin-g" cx="35%" cy="30%" r="60%">
-              <stop offset="0%"   stopColor="#F5E87A" />
-              <stop offset="100%" stopColor="#9C6E08" />
-            </radialGradient>
-            <filter id="orb-glow" x="-30%" y="-30%" width="160%" height="160%">
-              <feGaussianBlur stdDeviation="8" result="blur" />
-              <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-            </filter>
-            <filter id="coin-shadow">
-              <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="rgba(0,0,0,0.5)" />
-            </filter>
-          </defs>
-
-          {/* Pulsing outer ring */}
-          <circle cx="100" cy="130" r="88" fill="none" stroke="rgba(233,210,118,0.18)" strokeWidth="1">
-            <animate attributeName="r" values="88;104;88" dur="3.2s" repeatCount="indefinite" />
-            <animate attributeName="opacity" values="0.6;0;0.6" dur="3.2s" repeatCount="indefinite" />
-          </circle>
-
-          {/* Orb */}
-          <circle cx="100" cy="130" r="78" fill="url(#orb-main)" filter="url(#orb-glow)" />
-          <circle cx="100" cy="130" r="78" fill="url(#orb-hi)" />
-          <circle cx="100" cy="130" r="78" fill="url(#orb-rim)" />
-
-          {/* Coin slot */}
-          <rect x="74" y="56" width="52" height="10" rx="5" fill="rgba(0,0,0,0.45)" />
-          <rect x="76" y="57" width="48" height="5" rx="3" fill="rgba(255,200,50,0.12)" />
-
-          {/* U emblem */}
-          <text x="100" y="148" textAnchor="middle" fontSize="60" fontWeight="900"
-            fill="rgba(255,255,255,0.88)" fontFamily="system-ui,-apple-system,sans-serif"
-            letterSpacing="-2">U</text>
-
-          {/* Animated coins */}
-          {coins.map((c, i) => (
-            <g key={i} filter="url(#coin-shadow)">
-              <circle r={c.r} fill="url(#coin-g)" stroke="rgba(255,230,80,0.4)" strokeWidth="0.8">
-                <animateTransform attributeName="transform" type="translate"
-                  values={`${100+c.dx} ${startY};${100+c.dx} ${startY-54};${100+c.dx} ${startY-54}`}
-                  dur={c.dur} begin={c.delay} repeatCount="indefinite"
-                  calcMode="spline" keySplines="0.4 0 0.6 1;0 0 1 1" />
-                <animate attributeName="opacity" values="0;1;0" dur={c.dur} begin={c.delay} repeatCount="indefinite" />
-              </circle>
-              <text textAnchor="middle" fontSize={c.r * 0.9} fontWeight="900" fill="rgba(80,40,0,0.9)" fontFamily="system-ui">
-                <animateTransform attributeName="transform" type="translate"
-                  values={`${100+c.dx} ${startY+c.r*0.36};${100+c.dx} ${startY-54+c.r*0.36};${100+c.dx} ${startY-54+c.r*0.36}`}
-                  dur={c.dur} begin={c.delay} repeatCount="indefinite"
-                  calcMode="spline" keySplines="0.4 0 0.6 1;0 0 1 1" />
-                <animate attributeName="opacity" values="0;1;0" dur={c.dur} begin={c.delay} repeatCount="indefinite" />
-                U
-              </text>
-            </g>
-          ))}
-        </svg>
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        padding: '4px 12px', borderRadius: 50, marginBottom: 20,
+        border: `1px solid ${BORDER}`, background: CARD,
+      }}>
+        <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#22C55E', animation: 'glowPulse2 2s ease-in-out infinite' }} />
+        <span style={{ fontSize: 10, color: MUTED, fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase' as const }}>Live on BNB Chain</span>
       </div>
 
-      <div style={{ marginTop: 8, position: 'relative', zIndex: 2 }}>
-        <div className="shimmer-gold" style={{ fontSize: 80, fontWeight: 900, letterSpacing: -4, lineHeight: 1 }}>{balance}</div>
-        <div style={{ fontSize: 24, fontWeight: 800, color: GOLD_LIGHT, marginBottom: 6 }}>$U</div>
-        <div style={{ fontSize: 11, color: 'rgba(233,210,118,0.5)', letterSpacing: 3, textTransform: 'uppercase' as const, marginBottom: 28, fontWeight: 600 }}>For Charity</div>
-        <a
-          href={`https://bscscan.com/address/${TREASURY}`}
-          target="_blank" rel="noreferrer"
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            fontSize: 12, color: 'rgba(233,210,118,0.8)', textDecoration: 'none', fontWeight: 600,
-            padding: '10px 24px', borderRadius: 50,
-            border: '1px solid rgba(233,210,118,0.2)',
-            background: 'rgba(233,210,118,0.06)',
-          }}
-        >
-          Verify on BscScan ↗
-        </a>
-      </div>
+      {/* Amount */}
+      <div className="shimmer-gold" style={{ fontSize: 56, fontWeight: 900, letterSpacing: -3, lineHeight: 1, marginBottom: 6 }}>{balance}</div>
+      <div style={{ fontSize: 18, fontWeight: 800, color: GOLD, marginBottom: 4 }}>$U</div>
+      <div style={{ fontSize: 11, color: MUTED, letterSpacing: 3, textTransform: 'uppercase' as const, marginBottom: 10, fontWeight: 600 }}>Collected for Charity</div>
+      <p style={{ fontSize: 13, color: MUTED, margin: '0 auto 24px', maxWidth: 340, lineHeight: 1.6 }}>
+        Every purchase adds to this pool. Fully transparent and verifiable on-chain.
+      </p>
+
+      {/* Verify button */}
+      <a
+        href={`https://bscscan.com/address/${TREASURY}`}
+        target="_blank" rel="noreferrer"
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          fontSize: 12, color: TEXT, textDecoration: 'none', fontWeight: 600,
+          padding: '10px 24px', borderRadius: 50,
+          border: `1px solid ${BORDER}`, background: CARD,
+        }}
+      >
+        Verify on BscScan ↗
+      </a>
     </div>
   );
 }
@@ -272,8 +178,8 @@ function StatCard({ label, value, accent }: { label: string; value: string; acce
     <div style={{
       background: CARD,
       border: `1.5px solid ${accent ? GOLD : BORDER}`,
-      borderRadius: 14, padding: '14px 18px', flex: 1,
-      boxShadow: accent ? `0 4px 20px rgba(161,139,47,0.12)` : `0 1px 4px rgba(0,0,0,0.04)`,
+      borderRadius: 14, padding: '14px 18px', flex: 1, minWidth: 120,
+      boxShadow: accent ? '0 4px 20px rgba(161,139,47,0.10)' : '0 1px 4px rgba(0,0,0,0.04)',
     }}>
       <div style={{ fontSize: 9, color: MUTED, letterSpacing: 1.8, textTransform: 'uppercase' as const, marginBottom: 5, fontWeight: 700 }}>{label}</div>
       <div style={{ fontSize: 32, fontWeight: 900, color: accent ? GOLD : TEXT, letterSpacing: -1.5, lineHeight: 1 }}>{value}</div>
@@ -281,76 +187,66 @@ function StatCard({ label, value, accent }: { label: string; value: string; acce
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
-export default function FreedomOfMoneyPage() {
+// ─── Main Page (async Server Component — fetches live data) ──────────────────
+export default async function FreedomOfMoneyPage() {
+  const { balance, orderCount } = await getStats();
   return (
     <>
       <style>{CSS}</style>
 
       <div style={{ background: BG, minHeight: '100vh', fontFamily: 'system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif', color: TEXT }}>
 
-        {/* NAV */}
+        {/* NAV — centered pill, matching u.tech */}
         <nav style={{
-          padding: '0 32px', height: 60, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '16px 24px', display: 'flex', justifyContent: 'center',
           position: 'sticky', top: 0, zIndex: 100,
-          background: 'rgba(247,245,240,0.88)', backdropFilter: 'blur(16px)',
-          borderBottom: `1px solid ${BORDER}`,
         }}>
-          <a href="https://u.tech/" target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none' }}>
-            <ULogo size={22} />
-            <span style={{ fontSize: 13, fontWeight: 700, color: TEXT, letterSpacing: 0.2 }}>United Stables</span>
-          </a>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <a href="/freedomofmoney/track" style={{ padding: '7px 16px', borderRadius: 50, textDecoration: 'none', color: MUTED, fontSize: 12, fontWeight: 600 }}>Track Order</a>
-            <a href="/freedomofmoney/purchase" style={{
-              padding: '8px 20px', borderRadius: 50, textDecoration: 'none',
-              background: TEXT, color: '#fff', fontSize: 12, fontWeight: 700, letterSpacing: 0.2,
-            }}>Order Now</a>
+          <div className="nav-inner" style={{
+            background: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(16px)',
+            border: '1px solid rgba(0,0,0,0.06)', borderRadius: 50,
+            padding: '10px 28px', display: 'flex', alignItems: 'center', gap: 24,
+            maxWidth: 640, width: '100%',
+          }}>
+            <a href="https://u.tech/" target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none', marginRight: 'auto' }}>
+              <ULogo size={22} />
+              <span style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>United Stables</span>
+            </a>
+            <div className="nav-links" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <a href="/freedomofmoney/details" style={{ padding: '7px 14px', borderRadius: 50, textDecoration: 'none', color: MUTED, fontSize: 12, fontWeight: 500 }}>About</a>
+              <a href="/freedomofmoney/track" style={{ padding: '7px 14px', borderRadius: 50, textDecoration: 'none', color: MUTED, fontSize: 12, fontWeight: 500 }}>Track</a>
+              <a href="/freedomofmoney/purchase" style={{
+                padding: '8px 20px', borderRadius: 50, textDecoration: 'none',
+                background: TEXT, color: '#fff', fontSize: 12, fontWeight: 700,
+              }}>Order Now</a>
+            </div>
           </div>
         </nav>
 
         {/* HERO */}
-        <section style={{ position: 'relative', overflow: 'hidden', padding: '80px 32px 100px' }}>
-          <BgBlobs />
-
-          <div style={{ maxWidth: 1040, margin: '0 auto', display: 'flex', gap: 72, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center', position: 'relative', zIndex: 2 }}>
+        <section className="hero-section" style={{ position: 'relative', padding: '72px 32px 88px' }}>
+          <div className="hero-flex" style={{ maxWidth: 1000, margin: '0 auto', display: 'flex', gap: 64, alignItems: 'center', justifyContent: 'center' }}>
 
             {/* Book */}
-            <div className="fade-in" style={{ flexShrink: 0, animationDelay: '0.1s' }}>
+            <div className="fade-in" style={{ flexShrink: 0 }}>
               <BookCover />
             </div>
 
             {/* Copy */}
-            <div className="fade-in" style={{ flex: '1 1 300px', maxWidth: 440, display: 'flex', flexDirection: 'column', gap: 22, animationDelay: '0.2s' }}>
-
-              {/* Live badge */}
-              <div style={{
-                display: 'inline-flex', alignItems: 'center', gap: 7,
-                padding: '5px 12px', borderRadius: 50, alignSelf: 'flex-start',
-                border: `1px solid ${BORDER}`,
-                background: 'rgba(161,139,47,0.07)',
-              }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: GOLD_MID, display: 'inline-block', animation: 'glowPulse2 2s ease-in-out infinite' }} />
-                <span style={{ fontSize: 10, color: GOLD, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase' as const }}>Live · April 2026</span>
-              </div>
+            <div className="fade-in hero-copy" style={{ flex: '1 1 300px', maxWidth: 440, display: 'flex', flexDirection: 'column', gap: 20, animationDelay: '0.15s' }}>
 
               <div>
-                <h1 style={{ fontSize: 'clamp(28px,3.8vw,50px)', fontWeight: 900, lineHeight: 1.05, margin: '0 0 4px', letterSpacing: -2, color: TEXT }}>
-                  Freedom of Money
+                <h1 className="hero-title" style={{ fontSize: 46, fontWeight: 900, lineHeight: 1.08, margin: '0 0 6px', letterSpacing: -2, color: TEXT }}>
+                  Freedom of <span className="shimmer-gold">Money</span>
                 </h1>
-                <h1 style={{ fontSize: 'clamp(28px,3.8vw,50px)', fontWeight: 900, lineHeight: 1.05, margin: '0 0 14px', letterSpacing: -2 }}>
-                  <span className="shimmer-gold">× United Stables</span>
-                </h1>
-                <p style={{ fontSize: 14, color: MUTED, margin: 0, lineHeight: 1.8 }}>
-                  CZ&apos;s memoir, shipped worldwide.<br />
-                  Pay with <strong style={{ color: GOLD }}>$U</strong> · 100% of proceeds to charity · Verified on-chain.
+                <p style={{ fontSize: 15, color: MUTED, margin: '12px 0 0', lineHeight: 1.75 }}>
+                  The official CZ memoir, shipped worldwide. Pay with <strong style={{ color: GOLD }}>$U</strong>. 100% of proceeds go to charity, verified on-chain.
                 </p>
               </div>
 
               {/* Stats */}
-              <div style={{ display: 'flex', gap: 10 }}>
-                <StatCard label="Books Ordered" value="0" accent />
-                <StatCard label="On-chain Txns" value="0" />
+              <div className="stat-row" style={{ display: 'flex', gap: 10 }}>
+                <StatCard label="Books Ordered" value={String(orderCount)} accent />
+                <StatCard label="Raised ($U)" value={balance} />
               </div>
 
               {/* CTAs */}
@@ -359,8 +255,7 @@ export default function FreedomOfMoneyPage() {
                   display: 'inline-flex', alignItems: 'center', gap: 8,
                   padding: '13px 28px', borderRadius: 50, textDecoration: 'none',
                   background: TEXT, color: '#fff', fontSize: 14, fontWeight: 700,
-                  boxShadow: '0 4px 20px rgba(0,0,0,0.18)',
-                  letterSpacing: 0.2,
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
                 }}>
                   Order Your Copy
                   <svg width={15} height={15} viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="#fff" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -374,34 +269,30 @@ export default function FreedomOfMoneyPage() {
                 </a>
               </div>
 
+              {/* Trust line */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 11, color: MUTED }}>Audited by PeckShield</span>
+                <span style={{ fontSize: 11, color: MUTED }}>$U: <span style={{ fontFamily: 'monospace' }}>{CONTRACT}</span></span>
+              </div>
             </div>
           </div>
         </section>
 
         {/* DIVIDER */}
-        <div style={{ height: 1, background: `linear-gradient(to right, transparent, ${BORDER}, transparent)` }} />
+        <div style={{ height: 1, background: `linear-gradient(to right, transparent, ${BORDER}, transparent)`, maxWidth: 800, margin: '0 auto' }} />
 
-        {/* CHARITY ORB — dark accent section */}
-        <section style={{
-          background: '#0F0F0A',
-          position: 'relative', overflow: 'hidden',
-        }}>
-          {/* Subtle corner accents */}
-          <div style={{ position: 'absolute', top: 24, left: 24, width: 48, height: 48, borderTop: '1px solid rgba(233,210,118,0.12)', borderLeft: '1px solid rgba(233,210,118,0.12)' }} />
-          <div style={{ position: 'absolute', top: 24, right: 24, width: 48, height: 48, borderTop: '1px solid rgba(233,210,118,0.12)', borderRight: '1px solid rgba(233,210,118,0.12)' }} />
-          <div style={{ position: 'absolute', bottom: 24, left: 24, width: 48, height: 48, borderBottom: '1px solid rgba(233,210,118,0.12)', borderLeft: '1px solid rgba(233,210,118,0.12)' }} />
-          <div style={{ position: 'absolute', bottom: 24, right: 24, width: 48, height: 48, borderBottom: '1px solid rgba(233,210,118,0.12)', borderRight: '1px solid rgba(233,210,118,0.12)' }} />
-
+        {/* CHARITY COUNTER — clean, white, on brand */}
+        <section>
           <div style={{ maxWidth: 480, margin: '0 auto' }}>
-            <CharityOrb balance="0" />
+            <CharityCounter balance={balance} />
           </div>
         </section>
 
         {/* DIVIDER */}
-        <div style={{ height: 1, background: `linear-gradient(to right, transparent, ${BORDER}, transparent)` }} />
+        <div style={{ height: 1, background: `linear-gradient(to right, transparent, ${BORDER}, transparent)`, maxWidth: 800, margin: '0 auto' }} />
 
         {/* PURCHASE LOG */}
-        <section style={{ padding: '60px 32px 88px', maxWidth: 960, margin: '0 auto' }}>
+        <section className="log-section" style={{ padding: '56px 32px 80px', maxWidth: 960, margin: '0 auto' }}>
 
           <div style={{ textAlign: 'center', marginBottom: 36 }}>
             <div style={{ fontSize: 10, color: GOLD, letterSpacing: 3, textTransform: 'uppercase' as const, fontWeight: 700, marginBottom: 10 }}>Transparency</div>
@@ -413,7 +304,7 @@ export default function FreedomOfMoneyPage() {
             border: `1px solid ${BORDER}`,
             borderRadius: 20, overflow: 'hidden',
             background: CARD,
-            boxShadow: '0 2px 24px rgba(0,0,0,0.06)',
+            boxShadow: '0 2px 24px rgba(0,0,0,0.05)',
           }}>
             <div style={{ padding: '14px 24px', background: 'rgba(161,139,47,0.04)', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -434,10 +325,8 @@ export default function FreedomOfMoneyPage() {
                 </thead>
                 <tbody>
                   <tr>
-                    <td colSpan={3} style={{ padding: '64px 24px', textAlign: 'center' }}>
-                      <div style={{ fontSize: 36, marginBottom: 10 }}>📦</div>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: TEXT, marginBottom: 5 }}>No orders yet</div>
-                      <div style={{ fontSize: 13, color: MUTED }}>Be the first to own a piece of history.</div>
+                    <td colSpan={3} style={{ padding: '56px 24px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 14, color: MUTED }}>Orders will appear here once the first purchase is made.</div>
                     </td>
                   </tr>
                 </tbody>
@@ -447,34 +336,32 @@ export default function FreedomOfMoneyPage() {
         </section>
 
         {/* FOOTER */}
-        <footer style={{ borderTop: `1px solid ${BORDER}`, padding: '40px 24px', background: CARD }}>
-          <div style={{ maxWidth: 960, margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18 }}>
+        <footer style={{ borderTop: `1px solid ${BORDER}`, padding: '36px 24px', background: CARD }}>
+          <div style={{ maxWidth: 960, margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
 
             <a href="https://u.tech/" target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}>
               <ULogo size={20} />
               <span style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>United Stables</span>
             </a>
 
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+            <div className="footer-links" style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
               {[
-                { label: 'Campaign FAQ', href: '/freedomofmoney/details', ext: false },
-                { label: 'Track Order',  href: '/freedomofmoney/track',   ext: false },
-                { label: 'GitHub',       href: 'https://github.com/Moya-2025-Moya/-U-X-Freedom-of-Money', ext: true },
-                { label: 'u.tech',       href: 'https://u.tech/', ext: true },
-              ].map(({ label, href, ext }) => (
-                <a key={label} href={href} {...(ext ? { target: '_blank', rel: 'noreferrer' } : {})}
+                { label: 'About', href: '/freedomofmoney/details' },
+                { label: 'Track Order', href: '/freedomofmoney/track' },
+                { label: 'u.tech', href: 'https://u.tech/', ext: true },
+              ].map(({ label, href, ...rest }) => (
+                <a key={label} href={href} {...('ext' in rest ? { target: '_blank', rel: 'noreferrer' } : {})}
                   style={{ fontSize: 12, color: MUTED, textDecoration: 'none', padding: '6px 14px', borderRadius: 50, border: `1px solid ${BORDER}` }}>
-                  {label}{ext ? ' ↗' : ''}
+                  {label}{'ext' in rest ? ' ↗' : ''}
                 </a>
               ))}
             </div>
 
-            <div style={{ fontSize: 10, color: '#AAA', textAlign: 'center', lineHeight: 1.8, maxWidth: 560 }}>
-              <span style={{ fontFamily: 'monospace' }}>{CONTRACT.slice(0, 18)}...{CONTRACT.slice(-6)}</span>
-              {' · '}PeckShield #2025-157
+            <div style={{ fontSize: 10, color: '#AAA', textAlign: 'center', lineHeight: 1.8 }}>
+              $U: <span style={{ fontFamily: 'monospace' }}>{CONTRACT}</span> · Audited by PeckShield #2025-157
             </div>
             <div style={{ fontSize: 10, color: '#AAA', textAlign: 'center', maxWidth: 520, lineHeight: 1.7 }}>
-              Shipping availability varies by region. Orders to certain restricted destinations cannot be fulfilled. Details shown at checkout.
+              Shipping availability varies by region. Certain restricted destinations cannot be fulfilled.
             </div>
           </div>
         </footer>

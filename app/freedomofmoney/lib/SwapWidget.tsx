@@ -49,7 +49,7 @@ export function SwapWidget({
   const isBSC   = chainId === BSC_CHAIN_ID;
   const tokens  = isETH ? ETH_TOKENS : BSC_TOKENS;
 
-  const [selectedToken, setSelectedToken] = useState(0); // index into tokens
+  const [selectedToken, setSelectedToken] = useState(1); // default to USDT (stable)
   const [clicked, setClicked]             = useState(false);
 
   function buildUrl(): string {

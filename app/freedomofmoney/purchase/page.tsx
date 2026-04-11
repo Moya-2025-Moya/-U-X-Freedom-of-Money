@@ -121,9 +121,9 @@ function CopyButton({ text, label = 'Copy' }: { text: string; label?: string }) 
 }
 
 // ─── Field ────────────────────────────────────────────────────────────────────
-function Field({ label, name, value, onChange, placeholder, required = false, readOnly = false }: {
+function Field({ label, name, value, onChange, placeholder, required = false, readOnly = false, autoComplete }: {
   label: string; name: string; value: string; onChange?: (v: string) => void;
-  placeholder?: string; required?: boolean; readOnly?: boolean;
+  placeholder?: string; required?: boolean; readOnly?: boolean; autoComplete?: string;
 }) {
   const [focused, setFocused] = useState(false);
   return (
@@ -133,7 +133,7 @@ function Field({ label, name, value, onChange, placeholder, required = false, re
       </label>
       <input
         type="text" name={name} value={value} placeholder={placeholder} required={required}
-        readOnly={readOnly}
+        readOnly={readOnly} autoComplete={autoComplete}
         onChange={e => onChange?.(e.target.value)}
         onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
         style={{
@@ -144,6 +144,48 @@ function Field({ label, name, value, onChange, placeholder, required = false, re
           cursor: readOnly ? 'default' : 'text',
         }}
       />
+    </div>
+  );
+}
+
+// ─── Country select ──────────────────────────────────────────────────────────
+const COUNTRIES = [
+  'Argentina', 'Australia', 'Austria', 'Belgium', 'Brazil',
+  'Canada', 'Chile', 'Colombia', 'Denmark', 'Finland',
+  'France', 'Germany', 'Hong Kong', 'India', 'Indonesia',
+  'Ireland', 'Israel', 'Italy', 'Japan', 'Kenya',
+  'Macau', 'Malaysia', 'Mexico', 'Netherlands', 'New Zealand',
+  'Nigeria', 'Norway', 'Philippines', 'Portugal', 'Saudi Arabia',
+  'Singapore', 'South Africa', 'South Korea', 'Spain', 'Sweden',
+  'Switzerland', 'Taiwan', 'Thailand', 'Turkey', 'UAE',
+  'United Kingdom', 'United States', 'Vietnam',
+];
+
+function CountrySelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+      <label style={{ fontSize: 12, fontWeight: 600, color: TEXT }}>
+        Country<span style={{ color: GOLD, marginLeft: 3 }}>*</span>
+      </label>
+      <select
+        name="country" value={value} required autoComplete="country-name"
+        onChange={e => onChange(e.target.value)}
+        onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+        style={{
+          padding: '11px 14px', borderRadius: 10, fontSize: 14, color: value ? TEXT : MUTED, fontFamily: 'inherit',
+          border: `1.5px solid ${focused ? GOLD : '#E0E0DC'}`,
+          background: focused ? '#FFFDF5' : '#fff',
+          outline: 'none', transition: 'border-color 0.15s, background 0.15s',
+          cursor: 'pointer', appearance: 'none',
+          backgroundImage: `url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%236B6B6B' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
+          backgroundRepeat: 'no-repeat',
+          backgroundPosition: 'right 14px center',
+        }}
+      >
+        <option value="" disabled>Select country</option>
+        {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+      </select>
     </div>
   );
 }
@@ -254,11 +296,11 @@ function Step2({
       <div>
         <div style={{ fontSize: 11, color: GOLD, fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase' as const, marginBottom: 12 }}>Contact</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-          <Field label="Full Name" name="full_name" value={form.full_name} onChange={set('full_name')} placeholder="Satoshi Nakamoto" required />
-          <Field label="Email" name="email" value={form.email} onChange={set('email')} placeholder="you@example.com" required />
+          <Field label="Full Name" name="full_name" value={form.full_name} onChange={set('full_name')} placeholder="Satoshi Nakamoto" required autoComplete="name" />
+          <Field label="Email" name="email" value={form.email} onChange={set('email')} placeholder="you@example.com" required autoComplete="email" />
         </div>
         <div style={{ marginTop: 12 }}>
-          <Field label="Phone (optional)" name="phone" value={form.phone} onChange={set('phone')} placeholder="+1 555 000 0000" />
+          <Field label="Phone (optional)" name="phone" value={form.phone} onChange={set('phone')} placeholder="+1 555 000 0000" autoComplete="tel" />
         </div>
       </div>
 
@@ -266,15 +308,15 @@ function Step2({
       <div style={{ borderTop: '1px solid #F0EDE8', paddingTop: 18 }}>
         <div style={{ fontSize: 11, color: GOLD, fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase' as const, marginBottom: 12 }}>Shipping Address</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <Field label="Address Line 1" name="address_line1" value={form.address_line1} onChange={set('address_line1')} placeholder="123 Blockchain Ave" required />
-          <Field label="Address Line 2" name="address_line2" value={form.address_line2} onChange={set('address_line2')} placeholder="Apt, suite, floor (optional)" />
+          <Field label="Address Line 1" name="address_line1" value={form.address_line1} onChange={set('address_line1')} placeholder="123 Blockchain Ave" required autoComplete="address-line1" />
+          <Field label="Address Line 2" name="address_line2" value={form.address_line2} onChange={set('address_line2')} placeholder="Apt, suite, floor (optional)" autoComplete="address-line2" />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Field label="City" name="city" value={form.city} onChange={set('city')} placeholder="London" required />
-            <Field label="State / Province" name="state_province" value={form.state_province} onChange={set('state_province')} placeholder="England" />
+            <Field label="City" name="city" value={form.city} onChange={set('city')} placeholder="London" required autoComplete="address-level2" />
+            <Field label="State / Province" name="state_province" value={form.state_province} onChange={set('state_province')} placeholder="England" autoComplete="address-level1" />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Field label="Postal Code" name="postal_code" value={form.postal_code} onChange={set('postal_code')} placeholder="SW1A 1AA" required />
-            <Field label="Country" name="country" value={form.country} onChange={set('country')} placeholder="United Kingdom" required />
+            <Field label="Postal Code" name="postal_code" value={form.postal_code} onChange={set('postal_code')} placeholder="SW1A 1AA" required autoComplete="postal-code" />
+            <CountrySelect value={form.country} onChange={set('country')} />
           </div>
         </div>
       </div>
