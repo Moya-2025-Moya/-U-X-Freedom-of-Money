@@ -4,31 +4,43 @@ import { bsc } from 'viem/chains';
 import { getSupabaseAdmin } from '@/app/lib/supabase-server';
 import { U_CONTRACT, TREASURY, BOOK_U_AMOUNT } from '@/app/freedomofmoney/lib/constants';
 
-// ─── On-chain verification ────────────────────────────────────────────────────
-const bscClient = createPublicClient({ chain: bsc, transport: http() });
+// ─── On-chain client — dedicated RPC, same as frontend ───────────────────────
+const bscClient = createPublicClient({
+  chain: bsc,
+  transport: http('https://bnb-mainnet.g.alchemy.com/v2/TBTri88WcPoFSqH9luU86'),
+});
 
 const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' as const;
+const VERIFY_TIMEOUT_MS = 15_000;
 
+// ─── On-chain verification ────────────────────────────────────────────────────
 async function verifyPaymentTx(
   txHash: `0x${string}`,
   senderWallet: string | null,
 ): Promise<string | null> {
   let receipt;
   try {
-    receipt = await bscClient.getTransactionReceipt({ hash: txHash });
-  } catch {
+    receipt = await Promise.race([
+      bscClient.getTransactionReceipt({ hash: txHash }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('timeout')), VERIFY_TIMEOUT_MS),
+      ),
+    ]);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : '';
+    if (msg === 'timeout') return 'Blockchain verification timed out — please try again';
     return 'Transaction not found on BNB Chain';
   }
 
   if (!receipt) return 'Transaction not found on BNB Chain';
   if (receipt.status !== 'success') return 'Transaction failed on-chain';
 
-  // The tx must interact with the $U contract
+  // The tx must be a call to the $U contract
   if (receipt.to?.toLowerCase() !== U_CONTRACT.toLowerCase()) {
     return 'Transaction is not a $U token transfer';
   }
 
-  // Find the Transfer log from $U to TREASURY
+  // Find the Transfer log: $U → TREASURY
   const transferLog = receipt.logs.find(
     log =>
       log.address.toLowerCase() === U_CONTRACT.toLowerCase() &&
@@ -38,9 +50,8 @@ async function verifyPaymentTx(
 
   if (!transferLog) return 'No $U Transfer event found in transaction';
 
-  // topics[2] is the "to" address, left-padded to 32 bytes
-  const toAddr = ('0x' + (transferLog.topics[2] as string).slice(26)).toLowerCase();
-  const value  = BigInt(transferLog.data);
+  const toAddr  = ('0x' + (transferLog.topics[2] as string).slice(26)).toLowerCase();
+  const value   = BigInt(transferLog.data);
 
   if (toAddr !== TREASURY.toLowerCase()) {
     return 'Transfer recipient is not the United Stables treasury';
@@ -50,7 +61,7 @@ async function verifyPaymentTx(
     return `Insufficient payment: received ${value} but required ${BOOK_U_AMOUNT}`;
   }
 
-  // Optional: verify the sender matches the wallet that connected
+  // Verify sender matches connected wallet (optional — only when wallet_address is provided)
   if (senderWallet) {
     const fromAddr = ('0x' + (transferLog.topics[1] as string).slice(26)).toLowerCase();
     if (fromAddr !== senderWallet.toLowerCase()) {
@@ -89,7 +100,7 @@ function validate(body: Record<string, unknown>): string | null {
 
   if (str(body.notes).length > 1000) return 'Notes must be under 1000 characters';
 
-  // tx_hash is now required
+  // tx_hash is required — no payment, no order
   if (!str(body.tx_hash)) return 'Transaction hash is required';
   if (!/^0x[0-9a-f]{64}$/.test(str(body.tx_hash))) return 'Invalid transaction hash format';
 
@@ -111,7 +122,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
     }
 
-    // Validate fields (including required tx_hash)
     const validationError = validate(body as Record<string, unknown>);
     if (validationError) {
       return NextResponse.json({ error: validationError }, { status: 400 });
@@ -119,7 +129,6 @@ export async function POST(req: NextRequest) {
 
     const email = (body.email as string).trim().toLowerCase();
 
-    // Rate limit
     if (await isRateLimited(email)) {
       return NextResponse.json(
         { error: 'Please wait a moment before submitting again.' },
@@ -135,7 +144,7 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseAdmin();
 
-    // Duplicate tx_hash guard — prevent reuse of the same payment tx
+    // Duplicate tx guard — one tx hash can only fund one order
     const { data: existing } = await supabase
       .from('book_orders')
       .select('id')
