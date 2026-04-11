@@ -127,11 +127,10 @@ export function SwapWidget({
           srcToken: token.address,
           destToken: U_CONTRACT,
           srcAmount,
-          destAmount,
+          slippage: 100, // 1%
           priceRoute: priceData.priceRoute,
           userAddress: address,
           txOrigin: address,
-          slippage: 100, // 1%
         }),
       });
       const buildData = await buildRes.json();
