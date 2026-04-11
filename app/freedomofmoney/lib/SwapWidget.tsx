@@ -9,7 +9,6 @@ const BSC_CHAIN_ID = 56;
 const USDT_BSC = '0x55d398326f99059fF775485246999027B3197955' as const;
 const USDC_BSC = '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d' as const;
 
-// Paraswap Token Transfer Proxy (user approves tokens to this address)
 const PARASWAP_PROXY = '0x216b4b4ba9f3e719726886d34a177484278bfcae' as `0x${string}`;
 
 const APPROVE_ABI = [
@@ -36,7 +35,8 @@ const GOLD_DIM   = 'rgba(161,139,47,0.18)';
 const MUTED      = '#6B6B6B';
 const TEXT       = '#1A1A1A';
 
-type SwapStep = 'idle' | 'quoting' | 'approve' | 'approving' | 'ready' | 'swapping' | 'done' | 'error';
+// Steps: idle -> quoting -> (approve -> approving -> approved ->) building -> ready -> swapping -> done
+type Step = 'idle' | 'quoting' | 'approve' | 'approving' | 'building' | 'ready' | 'swapping' | 'done' | 'error';
 
 export function SwapWidget({
   onSwapped,
@@ -55,101 +55,101 @@ export function SwapWidget({
 
   const targetAmountU = customAmountU ?? BOOK_U_AMOUNT;
   const targetUsd     = (Number(targetAmountU) / 1e18).toFixed(2);
-  // Add 1% buffer for quote variance
   const inputEstimate = BigInt(Math.ceil(Number(targetAmountU) * 1.01));
+  const inputUsd      = (Number(inputEstimate) / 1e18).toFixed(2);
 
   const isBSC = chainId === BSC_CHAIN_ID;
   const [selectedToken, setSelectedToken] = useState(0);
-  const [step, setStep]     = useState<SwapStep>('idle');
+  const [step, setStep]         = useState<Step>('idle');
   const [errorMsg, setErrorMsg] = useState('');
-  const [swapTxData, setSwapTxData] = useState<{ to: string; data: string; value: string } | null>(null);
   const [quoteOutput, setQuoteOutput] = useState('');
+  const [priceRoute, setPriceRoute]   = useState<unknown>(null);
+  const [swapTxData, setSwapTxData]   = useState<{ to: string; data: string; value: string } | null>(null);
 
   const token = TOKENS[selectedToken];
 
-  // Check allowance
+  // Allowance
   const { data: allowance, refetch: refetchAllowance } = useReadContract({
-    address: token.address,
-    abi: APPROVE_ABI,
-    functionName: 'allowance',
+    address: token.address, abi: APPROVE_ABI, functionName: 'allowance',
     args: [address!, PARASWAP_PROXY],
     query: { enabled: !!address && isBSC },
   });
 
-  // Check token balance
+  // Token balance
   const { data: tokenBalance } = useReadContract({
-    address: token.address,
-    abi: ERC20_ABI,
-    functionName: 'balanceOf',
+    address: token.address, abi: ERC20_ABI, functionName: 'balanceOf',
     args: [address!],
     query: { enabled: !!address && isBSC },
   });
 
   const hasBalance = tokenBalance !== undefined && tokenBalance >= inputEstimate;
-  const needsApproval = allowance !== undefined && allowance < inputEstimate;
 
-  // Approve
+  // Approve tx
   const { writeContract: writeApprove, data: approveTxHash, isPending: approving } = useWriteContract();
   const { isSuccess: approveConfirmed } = useWaitForTransactionReceipt({ hash: approveTxHash });
 
-  // Swap (raw send)
-  const { sendTransaction, data: swapTxHash, isPending: sendingSwap } = useSendTransaction();
+  // Swap tx
+  const { sendTransaction, data: swapTxHash, isPending: sendingSwap, error: swapSendError } = useSendTransaction();
   const { isSuccess: swapConfirmed } = useWaitForTransactionReceipt({ hash: swapTxHash });
 
-  useEffect(() => { if (approveConfirmed) { refetchAllowance(); setStep('idle'); } }, [approveConfirmed, refetchAllowance]);
-  useEffect(() => { if (swapConfirmed) { setStep('done'); onSwapped(); } }, [swapConfirmed, onSwapped]);
+  // After approve confirms -> build tx
+  useEffect(() => {
+    if (approveConfirmed && step === 'approving') {
+      refetchAllowance();
+      buildTx();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [approveConfirmed]);
 
-  const fetchQuote = useCallback(async () => {
-    if (!address || !isBSC) return;
+  // After swap confirms
+  useEffect(() => {
+    if (swapConfirmed) { setStep('done'); onSwapped(); }
+  }, [swapConfirmed, onSwapped]);
+
+  // If swap send fails
+  useEffect(() => {
+    if (swapSendError && step === 'swapping') {
+      setErrorMsg(swapSendError.message.split('\n')[0]);
+      setStep('error');
+    }
+  }, [swapSendError, step]);
+
+  // Step 1: Get quote from Paraswap
+  async function fetchQuote() {
+    if (!address) return;
     setStep('quoting');
     setErrorMsg('');
     try {
       const srcAmount = inputEstimate.toString();
-      const priceRes = await fetch(
+      const res = await fetch(
         `https://apiv5.paraswap.io/prices?srcToken=${token.address}&destToken=${U_CONTRACT}&amount=${srcAmount}&srcDecimals=${token.decimals}&destDecimals=18&network=56&side=SELL`
       );
-      const priceData = await priceRes.json();
-      if (priceData.error) throw new Error(priceData.error);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
 
-      const destAmount = priceData.priceRoute.destAmount;
+      const destAmount = data.priceRoute.destAmount;
       setQuoteOutput((Number(destAmount) / 1e18).toFixed(2));
+      setPriceRoute(data.priceRoute);
 
-      // Check if output >= target
       if (BigInt(destAmount) < targetAmountU) {
-        throw new Error(`Quote output (${(Number(destAmount)/1e18).toFixed(2)}) is less than required (${targetUsd}). Try again.`);
+        throw new Error(`Output ${(Number(destAmount)/1e18).toFixed(2)} $U is less than needed ${targetUsd}. Try again.`);
       }
 
-      // Build tx
-      const buildRes = await fetch('https://apiv5.paraswap.io/transactions/56', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          srcToken: token.address,
-          destToken: U_CONTRACT,
-          srcAmount,
-          slippage: 100, // 1%
-          priceRoute: priceData.priceRoute,
-          userAddress: address,
-          txOrigin: address,
-        }),
-      });
-      const buildData = await buildRes.json();
-      if (buildData.error) throw new Error(typeof buildData.error === 'string' ? buildData.error : JSON.stringify(buildData.error));
-
-      setSwapTxData({ to: buildData.to, data: buildData.data, value: buildData.value || '0' });
-
-      // Check if approval needed
-      if (needsApproval) {
+      // Check allowance - if not enough, go to approve step
+      const currentAllowance = allowance ?? BigInt(0);
+      if (currentAllowance < inputEstimate) {
         setStep('approve');
       } else {
-        setStep('ready');
+        // Allowance OK, build tx directly
+        await doBuildTx(data.priceRoute, srcAmount);
       }
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : 'Failed to get quote');
       setStep('error');
     }
-  }, [address, isBSC, token, inputEstimate, targetAmountU, targetUsd, needsApproval]);
+  }
 
+  // Step 2 (if needed): Approve
   function handleApprove() {
     setStep('approving');
     writeApprove({
@@ -160,6 +160,40 @@ export function SwapWidget({
     });
   }
 
+  // Step 3: Build tx from Paraswap
+  async function doBuildTx(route: unknown, srcAmount: string) {
+    setStep('building');
+    try {
+      const res = await fetch('https://apiv5.paraswap.io/transactions/56', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          srcToken: token.address,
+          destToken: U_CONTRACT,
+          srcAmount,
+          slippage: 100,
+          priceRoute: route,
+          userAddress: address,
+          txOrigin: address,
+        }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(typeof data.error === 'string' ? data.error : JSON.stringify(data.error));
+      setSwapTxData({ to: data.to, data: data.data, value: data.value || '0' });
+      setStep('ready');
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : 'Failed to build transaction');
+      setStep('error');
+    }
+  }
+
+  // Called after approve confirms
+  function buildTx() {
+    if (!priceRoute) return;
+    doBuildTx(priceRoute, inputEstimate.toString());
+  }
+
+  // Step 4: Execute swap
   function handleSwap() {
     if (!swapTxData) return;
     setStep('swapping');
@@ -171,7 +205,6 @@ export function SwapWidget({
   }
 
   const tokenBalDisplay = tokenBalance !== undefined ? (Number(tokenBalance) / 1e18).toFixed(2) : '...';
-  const inputUsd = (Number(inputEstimate) / 1e18).toFixed(2);
 
   return (
     <div style={embedded ? {} : { border: `1.5px solid ${GOLD_DIM}`, borderRadius: 16, overflow: 'hidden', background: '#fff' }}>
@@ -209,7 +242,7 @@ export function SwapWidget({
               <div style={{ display: 'flex', gap: 8 }}>
                 {TOKENS.map((t, i) => (
                   <button key={t.symbol}
-                    onClick={() => { setSelectedToken(i); setStep('idle'); setSwapTxData(null); }}
+                    onClick={() => { setSelectedToken(i); setStep('idle'); setSwapTxData(null); setPriceRoute(null); setQuoteOutput(''); }}
                     style={{
                       padding: '7px 14px', borderRadius: 50,
                       border: `1.5px solid ${selectedToken === i ? GOLD : '#E0E0DC'}`,
@@ -223,7 +256,7 @@ export function SwapWidget({
               </div>
             </div>
 
-            {/* Swap summary */}
+            {/* Summary */}
             <div style={{ background: '#F7F5F0', borderRadius: 10, padding: '12px 14px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                 <span style={{ fontSize: 12, color: MUTED }}>You pay (approx.)</span>
@@ -245,7 +278,7 @@ export function SwapWidget({
               </div>
             )}
 
-            {/* Action buttons */}
+            {/* Idle: Get Quote */}
             {hasBalance && step === 'idle' && (
               <button onClick={fetchQuote}
                 style={{ padding: '12px', borderRadius: 50, border: 'none', cursor: 'pointer',
@@ -258,31 +291,37 @@ export function SwapWidget({
               <div style={{ textAlign: 'center', padding: '12px', fontSize: 13, color: MUTED }}>Fetching best price...</div>
             )}
 
+            {/* Approve */}
             {step === 'approve' && (
               <button onClick={handleApprove}
                 style={{ padding: '12px', borderRadius: 50, border: 'none', cursor: 'pointer',
                   background: `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`, color: '#fff', fontSize: 14, fontWeight: 700, width: '100%' }}>
-                Approve {token.symbol}
+                Step 1/2: Approve {token.symbol}
               </button>
             )}
 
             {step === 'approving' && (
               <div style={{ textAlign: 'center', padding: '12px', fontSize: 13, color: MUTED }}>
-                {approving ? 'Confirm in wallet...' : 'Waiting for approval...'}
+                {approving ? 'Confirm approval in wallet...' : 'Waiting for approval confirmation...'}
               </div>
             )}
 
+            {step === 'building' && (
+              <div style={{ textAlign: 'center', padding: '12px', fontSize: 13, color: MUTED }}>Preparing swap...</div>
+            )}
+
+            {/* Ready: Execute Swap */}
             {step === 'ready' && (
               <button onClick={handleSwap}
                 style={{ padding: '12px', borderRadius: 50, border: 'none', cursor: 'pointer',
                   background: `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`, color: '#fff', fontSize: 14, fontWeight: 700, width: '100%' }}>
-                Swap {inputUsd} {token.symbol} for {quoteOutput} $U
+                {priceRoute ? 'Step 2/2: ' : ''}Swap {inputUsd} {token.symbol} for {quoteOutput} $U
               </button>
             )}
 
             {step === 'swapping' && (
               <div style={{ textAlign: 'center', padding: '12px', fontSize: 13, color: MUTED }}>
-                {sendingSwap ? 'Confirm in wallet...' : 'Swapping on-chain...'}
+                {sendingSwap ? 'Confirm swap in wallet...' : 'Swapping on-chain...'}
               </div>
             )}
 
@@ -297,14 +336,13 @@ export function SwapWidget({
                 <div style={{ background: '#FEF2F2', borderRadius: 10, padding: '10px 14px', fontSize: 12, color: '#DC2626' }}>
                   {errorMsg}
                 </div>
-                <button onClick={() => { setStep('idle'); setErrorMsg(''); }}
+                <button onClick={() => { setStep('idle'); setErrorMsg(''); setPriceRoute(null); setSwapTxData(null); }}
                   style={{ fontSize: 12, color: GOLD, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
                   Try again
                 </button>
               </div>
             )}
 
-            {/* Disclaimer */}
             <div style={{ fontSize: 10, color: '#BBB', lineHeight: 1.5 }}>
               Swap routed by <a href="https://www.paraswap.io" target="_blank" rel="noreferrer" style={{ color: GOLD, textDecoration: 'none' }}>Paraswap</a> via PancakeSwap liquidity pools (audited by PeckShield, CertiK, SlowMist). 1% slippage tolerance. No fees from United Stables.
             </div>
