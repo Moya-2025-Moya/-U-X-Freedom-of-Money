@@ -5,6 +5,10 @@ import { U_CONTRACT as U_ADDR, TREASURY as TREASURY_ADDR, ERC20_ABI } from './li
 
 export const revalidate = 60;
 
+export const metadata = {
+  title: 'If you can, you must',
+};
+
 const bscClient = createPublicClient({
   chain: bsc,
   transport: http(process.env.BSC_RPC_URL || 'https://bsc-dataseed1.bnbchain.org'),
