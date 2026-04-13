@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import useSWR from 'swr';
 import Link from 'next/link';
-import { bscscanTx } from '../lib/constants';
+import { bscscanTx } from '@/app/lib/constants';
 
 const GOLD = '#A18B2F';
 const GOLD_LIGHT = '#E9D276';
@@ -59,7 +59,7 @@ function OrderRow({ order, onUpdate }: { order: Order; onUpdate: () => void }) {
     setSaving(true);
     setSaved(false);
     try {
-      const res = await fetch('/api/freedomofmoney/admin', {
+      const res = await fetch('/api/admin', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: order.id, status, amazon_tracking: tracking || null }),
@@ -181,7 +181,7 @@ function OrderRow({ order, onUpdate }: { order: Order; onUpdate: () => void }) {
 export default function AdminPage() {
   const [statusFilter, setStatusFilter] = useState<Status | 'all'>('all');
   const { data, mutate } = useSWR<{ orders: Order[] }>(
-    `/api/freedomofmoney/admin?status=${statusFilter}`,
+    `/api/admin?status=${statusFilter}`,
     fetcher,
     { refreshInterval: 30_000 },
   );
@@ -203,7 +203,7 @@ export default function AdminPage() {
           <span style={{ color: '#D1D5DB' }}>|</span>
           <span style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>Order Admin</span>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 12 }}>
-            <Link href="/freedomofmoney/track" style={{ fontSize: 12, color: MUTED, textDecoration: 'none' }}>Track Page ↗</Link>
+            <Link href="/track" style={{ fontSize: 12, color: MUTED, textDecoration: 'none' }}>Track Page ↗</Link>
           </div>
         </nav>
 

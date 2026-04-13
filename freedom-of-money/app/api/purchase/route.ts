@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createPublicClient, http } from 'viem';
 import { bsc } from 'viem/chains';
 import { getSupabaseAdmin } from '@/app/lib/supabase-server';
-import { U_CONTRACT, TREASURY, BOOK_U_AMOUNT } from '@/app/freedomofmoney/lib/constants';
+import { U_CONTRACT, TREASURY, BOOK_U_AMOUNT } from '@/app/lib/constants';
 
 // ─── On-chain client - dedicated RPC, same as frontend ───────────────────────
 const bscClient = createPublicClient({

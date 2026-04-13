@@ -4,9 +4,9 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { WagmiProvider, useAccount, useConnect, useDisconnect, useWriteContract, useWaitForTransactionReceipt, useReadContract } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { wagmiConfig } from '../lib/wagmi-config';
-import { U_CONTRACT, TREASURY, BOOK_U_AMOUNT, ERC20_ABI, bscscanTx } from '../lib/constants';
-import { SwapWidget } from '../lib/SwapWidget';
+import { wagmiConfig } from '@/app/lib/wagmi-config';
+import { U_CONTRACT, TREASURY, BOOK_U_AMOUNT, ERC20_ABI, bscscanTx } from '@/app/lib/constants';
+import { SwapWidget } from '@/app/lib/SwapWidget';
 
 // ─── Restricted destinations ──────────────────────────────────────────────────
 const RESTRICTED_PATTERNS = ['china', 'mainland china', 'prc', "people's republic of china", '中国', '中华人民共和国'];
@@ -392,7 +392,7 @@ function Step3({
     if (!isSuccess || !txHash || submitState !== 'idle') return;
     setSubmitState('submitting');
 
-    fetch('/api/freedomofmoney/purchase', {
+    fetch('/api/purchase', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -449,7 +449,7 @@ function Step3({
         </div>
 
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-          <Link href="/freedomofmoney/track" style={{ padding: '12px 24px', borderRadius: 50, background: `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`, color: '#fff', fontSize: 13, fontWeight: 700, textDecoration: 'none', boxShadow: `0 4px 16px rgba(161,139,47,0.3)` }}>
+          <Link href="/track" style={{ padding: '12px 24px', borderRadius: 50, background: `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`, color: '#fff', fontSize: 13, fontWeight: 700, textDecoration: 'none', boxShadow: `0 4px 16px rgba(161,139,47,0.3)` }}>
             Track Your Order →
           </Link>
           <Link href="/freedomofmoney" style={{ padding: '12px 24px', borderRadius: 50, border: `1.5px solid ${GOLD_DIM}`, color: GOLD, fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>
