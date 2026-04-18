@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createPublicClient, http } from 'viem';
+import { createPublicClient, http, type Hex } from 'viem';
 import { bsc } from 'viem/chains';
 import { getSupabaseAdmin } from '@/app/lib/supabase-server';
 import { U_CONTRACT, TREASURY, BOOK_U_AMOUNT, RESTRICTED_PATTERNS } from '@/app/lib/constants';
@@ -13,11 +13,21 @@ const bscClient = createPublicClient({
 const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' as const;
 const VERIFY_TIMEOUT_MS = 15_000;
 
+// Canonical message bound to (domain, email, tx). Signing this proves the
+// caller controls the on-chain sender, for this specific order.
+function canonicalOrderMessage(email: string, txHash: string): string {
+  return [
+    'United Stables: Confirm Freedom of Money book order',
+    `Email: ${email}`,
+    `Tx: ${txHash}`,
+  ].join('\n');
+}
+
 // ─── On-chain verification ────────────────────────────────────────────────────
-async function verifyPaymentTx(
-  txHash: `0x${string}`,
-  senderWallet: string | null,
-): Promise<string | null> {
+// Returns the real on-chain sender (payer). Never trusts a client-supplied address.
+type VerifyResult = { error: string } | { sender: `0x${string}` };
+
+async function verifyPaymentTx(txHash: `0x${string}`): Promise<VerifyResult> {
   let receipt;
   try {
     receipt = await Promise.race([
@@ -28,18 +38,18 @@ async function verifyPaymentTx(
     ]);
   } catch (e) {
     const msg = e instanceof Error ? e.message : '';
-    if (msg === 'timeout') return 'Blockchain verification timed out - please try again';
+    if (msg === 'timeout') return { error: 'Blockchain verification timed out - please try again' };
     console.error('[verifyPaymentTx] getTransactionReceipt failed:', msg, 'tx:', txHash);
-    return 'Payment verification failed';
+    return { error: 'Payment verification failed' };
   }
 
   if (!receipt) {
     console.error('[verifyPaymentTx] receipt is null for tx:', txHash);
-    return 'Payment verification failed';
+    return { error: 'Payment verification failed' };
   }
   if (receipt.status !== 'success') {
     console.error('[verifyPaymentTx] tx failed on-chain:', txHash);
-    return 'Payment verification failed';
+    return { error: 'Payment verification failed' };
   }
 
   // Find the Transfer log: $U → TREASURY
@@ -52,32 +62,24 @@ async function verifyPaymentTx(
 
   if (!transferLog) {
     console.error('[verifyPaymentTx] no Transfer event found in tx:', txHash);
-    return 'Payment verification failed';
+    return { error: 'Payment verification failed' };
   }
 
-  const toAddr  = ('0x' + (transferLog.topics[2] as string).slice(26)).toLowerCase();
-  const value   = BigInt(transferLog.data);
+  const toAddr = ('0x' + (transferLog.topics[2] as string).slice(26)).toLowerCase();
+  const value  = BigInt(transferLog.data);
 
   if (toAddr !== TREASURY.toLowerCase()) {
     console.error('[verifyPaymentTx] wrong recipient:', toAddr, 'expected:', TREASURY.toLowerCase(), 'tx:', txHash);
-    return 'Payment verification failed';
+    return { error: 'Payment verification failed' };
   }
 
   if (value < BOOK_U_AMOUNT) {
     console.error('[verifyPaymentTx] insufficient payment:', value.toString(), 'required:', BOOK_U_AMOUNT.toString(), 'tx:', txHash);
-    return 'Payment verification failed';
+    return { error: 'Payment verification failed' };
   }
 
-  // Verify sender matches connected wallet (optional - only when wallet_address is provided)
-  if (senderWallet) {
-    const fromAddr = ('0x' + (transferLog.topics[1] as string).slice(26)).toLowerCase();
-    if (fromAddr !== senderWallet.toLowerCase()) {
-      console.error('[verifyPaymentTx] sender mismatch:', fromAddr, 'expected:', senderWallet.toLowerCase(), 'tx:', txHash);
-      return 'Payment verification failed';
-    }
-  }
-
-  return null; // valid
+  const sender = ('0x' + (transferLog.topics[1] as string).slice(26)).toLowerCase() as `0x${string}`;
+  return { sender };
 }
 
 // ─── Validation ───────────────────────────────────────────────────────────────
@@ -114,6 +116,10 @@ function validate(body: Record<string, unknown>): string | null {
   // tx_hash is required - no payment, no order
   if (!str(body.tx_hash)) return 'Transaction hash is required';
   if (!/^0x[0-9a-f]{64}$/.test(str(body.tx_hash))) return 'Invalid transaction hash format';
+
+  // signature is required - proves caller controls the paying wallet
+  if (!str(body.signature)) return 'Wallet signature is required';
+  if (!/^0x[0-9a-fA-F]+$/.test(str(body.signature))) return 'Invalid signature format';
 
   return null;
 }
@@ -153,10 +159,7 @@ export async function POST(req: NextRequest) {
     }
 
     const tx_hash = (body.tx_hash as string).trim().toLowerCase() as `0x${string}`;
-    const wallet_address = (body.wallet_address as string)?.trim().toLowerCase() || null;
-    if (wallet_address && !/^0x[0-9a-f]{40}$/.test(wallet_address)) {
-      return NextResponse.json({ error: 'Invalid wallet address format' }, { status: 400 });
-    }
+    const signature = (body.signature as string).trim() as Hex;
 
     const supabase = getSupabaseAdmin();
 
@@ -173,10 +176,33 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // On-chain payment verification
-    const txError = await verifyPaymentTx(tx_hash, wallet_address);
-    if (txError) {
-      return NextResponse.json({ error: txError }, { status: 400 });
+    // On-chain payment verification - source of truth for sender
+    const verifyResult = await verifyPaymentTx(tx_hash);
+    if ('error' in verifyResult) {
+      return NextResponse.json({ error: verifyResult.error }, { status: 400 });
+    }
+    const wallet_address = verifyResult.sender;
+
+    // Signature verification - caller must prove control of the paying wallet.
+    // Uses viem's verifyMessage (EIP-191), which falls back to ERC-1271 for
+    // smart-contract wallets (Safe, Argent, etc.).
+    const message = canonicalOrderMessage(email, tx_hash);
+    let sigValid = false;
+    try {
+      sigValid = await bscClient.verifyMessage({
+        address: wallet_address,
+        message,
+        signature,
+      });
+    } catch (e) {
+      console.error('[verifySignature] error:', e, 'tx:', tx_hash);
+      return NextResponse.json({ error: 'Signature verification failed' }, { status: 400 });
+    }
+    if (!sigValid) {
+      return NextResponse.json(
+        { error: 'Signature does not match the wallet that paid' },
+        { status: 400 },
+      );
     }
 
     // Try insert first

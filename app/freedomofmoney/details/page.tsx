@@ -185,7 +185,7 @@ export default function DetailsPage() {
               />
               <QA
                 q="Which countries can you ship to?"
-                a="Most countries worldwide. Certain restricted regions (China mainland, North Korea, Iran, Syria, Cuba) cannot be fulfilled. The checkout page will notify you if your destination is restricted."
+                a="Most countries worldwide. If your destination isn't available, the checkout page will let you know."
               />
               <QA
                 q="How do I track my order?"

@@ -2,12 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { WagmiProvider, useAccount, useConnect, useDisconnect, useWriteContract, useWaitForTransactionReceipt, useReadContract } from 'wagmi';
+import { WagmiProvider, useAccount, useConnect, useDisconnect, useWriteContract, useWaitForTransactionReceipt, useReadContract, useSignMessage } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { wagmiConfig } from '../lib/wagmi-config';
 import {
   U_CONTRACT, TREASURY, BOOK_U_AMOUNT, ERC20_ABI, bscscanTx,
-  COUNTRIES, isRestrictedCountry, RESTRICTED_COUNTRIES_DISPLAY,
+  COUNTRIES, isRestrictedCountry,
 } from '../lib/constants';
 import { SwapWidget } from '../lib/SwapWidget';
 
@@ -280,7 +280,7 @@ function Step2({
     }
 
     if (isRestrictedCountry(form.country)) {
-      setError(`We can't ship to ${form.country.trim()}. Restricted regions: ${RESTRICTED_COUNTRIES_DISPLAY.join(', ')}.`);
+      setError("We can't ship to that destination. Please use a different shipping address.");
       return;
     }
 
@@ -370,7 +370,7 @@ function Step2({
       </button>
 
       <p style={{ fontSize: 11, color: MUTED, textAlign: 'center', margin: 0, lineHeight: 1.6 }}>
-        We can ship worldwide, except {RESTRICTED_COUNTRIES_DISPLAY.join(', ')}.
+        We ship to most countries worldwide.
       </p>
     </form>
   );
@@ -399,10 +399,14 @@ function Step3({
 
   const { writeContract, data: txHash, isPending: isSigning, error: writeError } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
+  const { signMessageAsync, isPending: isSigningMsg } = useSignMessage();
 
-  const [submitState, setSubmitState] = useState<'idle' | 'submitting' | 'done' | 'error'>('idle');
+  const [submitState, setSubmitState] = useState<
+    'idle' | 'awaiting_sign' | 'sign_rejected' | 'submitting' | 'done' | 'error'
+  >('idle');
   const [submitError, setSubmitError] = useState('');
   const [retryCount, setRetryCount] = useState(0);
+  const [signature, setSignature] = useState<string | null>(null);
   const [confirmSlow, setConfirmSlow] = useState(false);
   const [showSwap, setShowSwap] = useState(false);
 
@@ -423,8 +427,40 @@ function Step3({
     return () => clearTimeout(t);
   }, [isConfirming]);
 
+  // Canonical message — MUST match the server's canonicalOrderMessage exactly,
+  // including email lowercasing and tx_hash lowercasing.
+  function buildSignMessage(hash: string): string {
+    return [
+      'United Stables: Confirm Freedom of Money book order',
+      `Email: ${form.email.trim().toLowerCase()}`,
+      `Tx: ${hash.toLowerCase()}`,
+    ].join('\n');
+  }
+
+  // Request wallet signature binding this order to the paying address.
+  async function requestSignature() {
+    if (!txHash) return;
+    setSubmitState('awaiting_sign');
+    setSubmitError('');
+    try {
+      const sig = await signMessageAsync({ message: buildSignMessage(txHash) });
+      setSignature(sig);
+      submitOrder(0, sig);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message.split('\n')[0] : 'Signature declined';
+      setSubmitError(msg);
+      setSubmitState('sign_rejected');
+    }
+  }
+
   // Post order with retry — idempotent by tx_hash
-  async function submitOrder(attempt = 0) {
+  async function submitOrder(attempt = 0, sigOverride?: string) {
+    const sig = sigOverride ?? signature;
+    if (!sig) {
+      setSubmitError('Missing signature — please sign again');
+      setSubmitState('sign_rejected');
+      return;
+    }
     setSubmitState('submitting');
     setSubmitError('');
     setRetryCount(attempt);
@@ -432,7 +468,7 @@ function Step3({
       const res = await fetch('/api/freedomofmoney/purchase', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, tx_hash: txHash, wallet_address: address }),
+        body: JSON.stringify({ ...form, tx_hash: txHash, signature: sig }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Submission failed');
@@ -443,7 +479,7 @@ function Step3({
       // Auto-retry up to 3 times with exponential backoff — payment already on-chain, safe to retry
       if (attempt < 3) {
         setSubmitError(`${msg}. Retrying (${attempt + 1}/3)…`);
-        setTimeout(() => submitOrder(attempt + 1), 1500 * Math.pow(2, attempt));
+        setTimeout(() => submitOrder(attempt + 1, sig), 1500 * Math.pow(2, attempt));
       } else {
         setSubmitError(msg);
         setSubmitState('error');
@@ -451,10 +487,10 @@ function Step3({
     }
   }
 
-  // After on-chain confirmation, auto-submit order
+  // After on-chain confirmation, request a signature (which then auto-submits).
   useEffect(() => {
     if (!isSuccess || !txHash || submitState !== 'idle') return;
-    submitOrder(0);
+    requestSignature();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuccess, txHash]);
 
@@ -505,6 +541,11 @@ function Step3({
     );
   }
 
+  // Once a payment tx is broadcast, locking "Back" prevents re-entering Step3
+  // fresh (which would wipe txHash state and let the user double-pay).
+  const lockBack =
+    !!txHash || isConfirming || isSigning || isSigningMsg || submitState !== 'idle';
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
@@ -512,11 +553,13 @@ function Step3({
       <button
         type="button"
         onClick={onBack}
-        disabled={submitState === 'submitting' || isConfirming || isSigning}
+        disabled={lockBack}
         style={{
           alignSelf: 'flex-start', background: 'none', border: 'none',
-          fontSize: 13, color: MUTED, cursor: (submitState === 'submitting' || isConfirming || isSigning) ? 'not-allowed' : 'pointer',
+          fontSize: 13, color: MUTED,
+          cursor: lockBack ? 'not-allowed' : 'pointer',
           padding: 0, fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 4,
+          opacity: lockBack ? 0.5 : 1,
         }}
       >
         ← Back to shipping
@@ -529,7 +572,13 @@ function Step3({
           <button
             type="button"
             onClick={onBack}
-            style={{ background: 'none', border: 'none', fontSize: 12, color: MUTED, cursor: 'pointer', padding: 0, fontFamily: 'inherit', textDecoration: 'underline' }}
+            disabled={lockBack}
+            style={{
+              background: 'none', border: 'none', fontSize: 12, color: MUTED,
+              cursor: lockBack ? 'not-allowed' : 'pointer',
+              padding: 0, fontFamily: 'inherit', textDecoration: 'underline',
+              opacity: lockBack ? 0.5 : 1,
+            }}
           >
             Edit
           </button>
@@ -643,10 +692,56 @@ function Step3({
         </div>
       )}
 
+      {/* Awaiting signature overlay */}
+      {submitState === 'awaiting_sign' && (
+        <div style={{ padding: '14px 16px', borderRadius: 12, background: 'rgba(233,210,118,0.08)', border: `1px solid ${GOLD_DIM}`, fontSize: 13, color: TEXT, textAlign: 'center' }}>
+          Payment confirmed on-chain. Please sign the message in your wallet to confirm this shipping address.
+        </div>
+      )}
+
+      {/* Signature rejected — tx already on-chain, user can re-sign */}
+      {submitState === 'sign_rejected' && (
+        <div style={{ padding: '14px 16px', borderRadius: 10, background: '#FEF2F2', border: '1px solid #FECACA', fontSize: 13, color: '#DC2626', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div>
+            <strong>Your payment went through</strong> — but we need your wallet signature to link this shipping address to your order.
+          </div>
+          <div style={{ fontSize: 12 }}>Reason: {submitError}</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={requestSignature}
+              style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#DC2626', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+            >
+              Sign again
+            </button>
+            {txHash && (
+              <a href={bscscanTx(txHash)} target="_blank" rel="noreferrer"
+                style={{ padding: '8px 16px', borderRadius: 8, border: '1.5px solid #FECACA', fontSize: 12, fontWeight: 600, color: '#DC2626', textDecoration: 'none' }}>
+                View tx on BscScan ↗
+              </a>
+            )}
+          </div>
+          <div style={{ fontSize: 11, color: '#991B1B' }}>Signing is free — no gas required. Keep your tx hash safe.</div>
+        </div>
+      )}
+
       {/* Submitting overlay */}
       {submitState === 'submitting' && (
         <div style={{ padding: '14px 16px', borderRadius: 12, background: 'rgba(233,210,118,0.08)', border: `1px solid ${GOLD_DIM}`, fontSize: 13, color: TEXT, textAlign: 'center' }}>
-          {retryCount > 0 ? `Retrying order save (attempt ${retryCount + 1}/4)…` : 'Payment confirmed. Saving your order…'}
+          {retryCount > 0 ? `Retrying order save (attempt ${retryCount + 1}/4)…` : 'Signature received. Saving your order…'}
+        </div>
+      )}
+
+      {/* Final-sale disclaimer — shown only before payment is broadcast */}
+      {!txHash && (
+        <div style={{
+          padding: '12px 14px', borderRadius: 10,
+          background: 'rgba(161,139,47,0.06)', border: `1px solid ${GOLD_DIM}`,
+          fontSize: 12, color: TEXT, lineHeight: 1.55,
+        }}>
+          <strong style={{ color: GOLD }}>All sales final.</strong>{' '}
+          Because payment is settled on-chain, we cannot issue refunds or accept returns.
+          Please double-check your shipping address before paying.
         </div>
       )}
 
@@ -654,10 +749,14 @@ function Step3({
       <div style={{ textAlign: 'center' }}>
         <button
           onClick={pay}
-          disabled={!hasEnough || isSigning || isConfirming || submitState === 'submitting'}
+          disabled={
+            !hasEnough || isSigning || isConfirming || isSigningMsg ||
+            submitState === 'submitting' || submitState === 'awaiting_sign' ||
+            submitState === 'sign_rejected' || submitState === 'error'
+          }
           style={{
             padding: '14px 40px', borderRadius: 50, border: 'none',
-            cursor: (!hasEnough || isSigning || isConfirming) ? 'not-allowed' : 'pointer',
+            cursor: (!hasEnough || isSigning || isConfirming || isSigningMsg) ? 'not-allowed' : 'pointer',
             background: !hasEnough ? '#D1D5DB' : `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`,
             color: '#fff', fontSize: 15, fontWeight: 700, letterSpacing: 0.3,
             boxShadow: !hasEnough ? 'none' : `0 4px 20px rgba(161,139,47,0.35)`,
@@ -665,6 +764,7 @@ function Step3({
         >
           {isSigning ? 'Waiting for wallet…'
             : isConfirming ? 'Confirming on-chain…'
+            : submitState === 'awaiting_sign' ? 'Sign in your wallet…'
             : submitState === 'submitting' ? 'Saving order…'
             : !hasEnough ? `Get ${shortfall.toFixed(2)} more $U first`
             : `Pay ${BOOK_USD.toFixed(2)} $U →`}
