@@ -3,8 +3,64 @@ import { getSupabaseAdmin } from '@/app/lib/supabase-server';
 
 const STATUSES = ['pending', 'ordered', 'shipped', 'delivered', 'cancelled'];
 
+const ADMIN_COOKIE = 'fom_admin';
+
+// Constant-time-ish string compare to resist timing
+function safeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+function isAuthed(req: NextRequest): boolean {
+  const password = process.env.ADMIN_PASSWORD;
+  // If no password is configured, refuse — fail-closed
+  if (!password) return false;
+  const cookie = req.cookies.get(ADMIN_COOKIE)?.value;
+  if (!cookie) return false;
+  return safeEqual(cookie, password);
+}
+
+function unauthorized() {
+  return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+}
+
+// POST /api/freedomofmoney/admin  { password }  -> sets cookie, authenticates
+export async function POST(req: NextRequest) {
+  const body = await req.json().catch(() => null);
+  const password = process.env.ADMIN_PASSWORD;
+  if (!password) {
+    return NextResponse.json({ error: 'Admin is not configured on this server.' }, { status: 503 });
+  }
+  if (!body?.password || typeof body.password !== 'string') {
+    return NextResponse.json({ error: 'Password required' }, { status: 400 });
+  }
+  if (!safeEqual(body.password, password)) {
+    return NextResponse.json({ error: 'Incorrect password' }, { status: 401 });
+  }
+  const res = NextResponse.json({ success: true });
+  res.cookies.set(ADMIN_COOKIE, password, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+    maxAge: 60 * 60 * 8, // 8 hours
+  });
+  return res;
+}
+
+// DELETE /api/freedomofmoney/admin -> logout
+export async function DELETE() {
+  const res = NextResponse.json({ success: true });
+  res.cookies.delete(ADMIN_COOKIE);
+  return res;
+}
+
 // GET - list all orders (optionally filtered by status)
 export async function GET(req: NextRequest) {
+  if (!isAuthed(req)) return unauthorized();
+
   const status = req.nextUrl.searchParams.get('status');
   const supabase = getSupabaseAdmin();
 
@@ -28,6 +84,8 @@ export async function GET(req: NextRequest) {
 
 // PATCH - update status and/or amazon_tracking for one order
 export async function PATCH(req: NextRequest) {
+  if (!isAuthed(req)) return unauthorized();
+
   const body = await req.json().catch(() => null);
   if (!body?.id) return NextResponse.json({ error: 'Missing order id' }, { status: 400 });
 

@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { bscscanTx } from '../lib/constants';
 
 const GOLD = '#A18B2F';
@@ -42,6 +43,53 @@ function ULogo({ size = 28 }: { size?: number }) {
   );
 }
 
+function CopyIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden>
+      <rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" strokeWidth={2} />
+      <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke="currentColor" strokeWidth={2} />
+    </svg>
+  );
+}
+
+function CopyButton({ text, label = 'Copy' }: { text: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        navigator.clipboard.writeText(text).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1800);
+        });
+      }}
+      style={{
+        padding: '4px 10px', borderRadius: 6, border: `1px solid ${copied ? GOLD : '#E0E0DC'}`,
+        background: copied ? 'rgba(233,210,118,0.12)' : '#fff',
+        fontSize: 11, fontWeight: 600, color: copied ? GOLD : MUTED, cursor: 'pointer',
+        display: 'inline-flex', alignItems: 'center', gap: 4,
+      }}
+    >
+      {copied ? (
+        <><svg width={11} height={11} viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke={GOLD} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" /></svg> Copied</>
+      ) : (
+        <><CopyIcon /> {label}</>
+      )}
+    </button>
+  );
+}
+
+function Spinner() {
+  return (
+    <svg width={14} height={14} viewBox="0 0 24 24" aria-hidden style={{ verticalAlign: 'middle' }}>
+      <circle cx="12" cy="12" r="10" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth={3} />
+      <path d="M22 12a10 10 0 0 1-10 10" fill="none" stroke="#fff" strokeWidth={3} strokeLinecap="round">
+        <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.8s" repeatCount="indefinite" />
+      </path>
+    </svg>
+  );
+}
+
 function OrderCard({ order }: { order: Order }) {
   const cfg = STATUS_CONFIG[order.status] ?? STATUS_CONFIG.pending;
   return (
@@ -59,34 +107,38 @@ function OrderCard({ order }: { order: Order }) {
       <div style={{ fontSize: 12, color: MUTED, background: '#F7F5F0', borderRadius: 8, padding: '8px 12px' }}>{cfg.desc}</div>
 
       {order.amazon_tracking && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <svg width={14} height={14} viewBox="0 0 24 24" fill="none"><rect x="2" y="7" width="20" height="14" rx="2" stroke={GOLD} strokeWidth={2} /><path d="M16 7V5a2 2 0 00-4 0v2M12 12v4M10 14h4" stroke={GOLD} strokeWidth={2} strokeLinecap="round" /></svg>
           <span style={{ fontSize: 12, color: TEXT }}>Amazon tracking: <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{order.amazon_tracking}</span></span>
+          <CopyButton text={order.amazon_tracking} label="" />
         </div>
       )}
 
       {order.tx_hash && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <svg width={14} height={14} viewBox="0 0 24 24" fill="none"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" stroke={MUTED} strokeWidth={2} strokeLinecap="round" /><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" stroke={MUTED} strokeWidth={2} strokeLinecap="round" /></svg>
           <a href={bscscanTx(order.tx_hash)} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: GOLD, fontFamily: 'monospace', textDecoration: 'none' }}>
             {order.tx_hash.slice(0, 14)}…{order.tx_hash.slice(-6)} ↗
           </a>
+          <CopyButton text={order.tx_hash} label="" />
         </div>
       )}
     </div>
   );
 }
 
-export default function TrackPage() {
-  const [query, setQuery] = useState('');
+function TrackInner() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const initialQ = searchParams?.get('q') ?? '';
+
+  const [query, setQuery] = useState(initialQ);
   const [loading, setLoading] = useState(false);
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [error, setError] = useState('');
   const [searched, setSearched] = useState(false);
 
-  async function search(e: React.FormEvent) {
-    e.preventDefault();
-    const q = query.trim();
+  const runSearch = useCallback(async (q: string) => {
     if (!q) return;
     setLoading(true);
     setError('');
@@ -102,8 +154,103 @@ export default function TrackPage() {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  // Auto-search on mount if q is in URL
+  useEffect(() => {
+    if (initialQ) runSearch(initialQ);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const q = query.trim();
+    if (!q) return;
+    // Push to URL so it's shareable/refreshable
+    const params = new URLSearchParams({ q });
+    router.replace(`/freedomofmoney/track?${params}`, { scroll: false });
+    runSearch(q);
   }
 
+  return (
+    <div style={{ maxWidth: 560, margin: '0 auto', padding: '60px 24px 80px' }}>
+
+      {/* Header */}
+      <div style={{ textAlign: 'center', marginBottom: 48 }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '5px 14px', borderRadius: 50, border: `1px solid ${GOLD_DIM}`, background: 'rgba(233,210,118,0.08)', marginBottom: 20 }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: GOLD, display: 'inline-block' }} />
+          <span style={{ fontSize: 11, color: GOLD, fontWeight: 600, letterSpacing: 1.5, textTransform: 'uppercase' as const }}>Order Tracking</span>
+        </div>
+        <h1 style={{ fontSize: 30, fontWeight: 800, letterSpacing: -1, margin: '0 0 10px' }}>Track Your Order</h1>
+        <p style={{ color: MUTED, fontSize: 14, lineHeight: 1.65, margin: 0 }}>
+          Enter your transaction hash or wallet address to check your order status.
+        </p>
+      </div>
+
+      {/* Search form */}
+      <form onSubmit={submit} style={{ marginBottom: 36 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <input
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="0x… tx hash or wallet address"
+            disabled={loading}
+            aria-label="Search by tx hash or wallet address"
+            style={{
+              flex: '1 1 220px', padding: '13px 16px', borderRadius: 12,
+              border: '1.5px solid #E0E0DC', background: loading ? '#F7F5F0' : '#fff',
+              fontSize: 14, color: TEXT, fontFamily: 'monospace', outline: 'none',
+            }}
+            onFocus={e => { e.target.style.borderColor = GOLD; }}
+            onBlur={e => { e.target.style.borderColor = '#E0E0DC'; }}
+          />
+          <button
+            type="submit" disabled={loading || !query.trim()}
+            style={{
+              padding: '13px 22px', borderRadius: 12, border: 'none',
+              cursor: loading || !query.trim() ? 'not-allowed' : 'pointer',
+              background: loading || !query.trim() ? '#E0E0DC' : `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`,
+              color: '#fff', fontSize: 14, fontWeight: 700, flexShrink: 0,
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+            }}
+          >
+            {loading ? <><Spinner /> Searching</> : 'Search'}
+          </button>
+        </div>
+        <p style={{ fontSize: 11, color: MUTED, marginTop: 8 }}>
+          Accepts a 66-character tx hash (0x + 64 hex) or a 42-character wallet address.
+        </p>
+      </form>
+
+      {/* Results */}
+      {error && (
+        <div style={{ padding: '14px 18px', borderRadius: 12, background: '#FEF2F2', border: '1px solid #FECACA', fontSize: 13, color: '#DC2626' }}>
+          {error}
+        </div>
+      )}
+
+      {searched && !loading && !error && orders !== null && (
+        orders.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px 20px', color: MUTED }}>
+            <svg width={40} height={40} viewBox="0 0 24 24" fill="none" style={{ margin: '0 auto 16px', display: 'block' }}>
+              <circle cx={11} cy={11} r={8} stroke="#D1D5DB" strokeWidth={2} />
+              <path d="M21 21l-4.35-4.35" stroke="#D1D5DB" strokeWidth={2} strokeLinecap="round" />
+            </svg>
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>No order found</div>
+            <div style={{ fontSize: 13 }}>Double-check the tx hash or wallet address and try again.</div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {orders.map(o => <OrderCard key={o.id} order={o} />)}
+          </div>
+        )
+      )}
+
+    </div>
+  );
+}
+
+export default function TrackPage() {
   return (
     <>
       <style>{`* { box-sizing: border-box; } body { margin: 0; }`}</style>
@@ -111,88 +258,20 @@ export default function TrackPage() {
 
         {/* NAV */}
         <nav style={{ position: 'sticky', top: 0, zIndex: 100, padding: '16px 24px', display: 'flex', justifyContent: 'center' }}>
-          <div style={{ background: 'rgba(250,250,248,0.92)', backdropFilter: 'blur(12px)', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 50, padding: '10px 24px', display: 'flex', alignItems: 'center', gap: 20, maxWidth: 600, width: '100%' }}>
+          <div style={{ background: 'rgba(250,250,248,0.92)', backdropFilter: 'blur(12px)', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 50, padding: '10px 20px', display: 'flex', alignItems: 'center', gap: 16, maxWidth: 600, width: '100%' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
               <ULogo size={22} />
               <span style={{ fontSize: 13, fontWeight: 600, color: TEXT }}>United Stables</span>
             </div>
-            <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
-              <Link href="/freedomofmoney" style={{ fontSize: 12, color: MUTED, textDecoration: 'none' }}>← Campaign</Link>
-              <span style={{ fontSize: 12, color: GOLD, fontWeight: 600 }}>Track Order</span>
-            </div>
+            <Link href="/freedomofmoney" style={{ fontSize: 12, color: MUTED, textDecoration: 'none' }}>← Campaign</Link>
+            <Link href="/freedomofmoney/swap" style={{ fontSize: 12, color: MUTED, textDecoration: 'none' }}>Get $U</Link>
+            <span style={{ fontSize: 12, color: GOLD, fontWeight: 600 }}>Track</span>
           </div>
         </nav>
 
-        <div style={{ maxWidth: 560, margin: '0 auto', padding: '60px 24px 80px' }}>
-
-          {/* Header */}
-          <div style={{ textAlign: 'center', marginBottom: 48 }}>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '5px 14px', borderRadius: 50, border: `1px solid ${GOLD_DIM}`, background: 'rgba(233,210,118,0.08)', marginBottom: 20 }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: GOLD, display: 'inline-block' }} />
-              <span style={{ fontSize: 11, color: GOLD, fontWeight: 600, letterSpacing: 1.5, textTransform: 'uppercase' as const }}>Order Tracking</span>
-            </div>
-            <h1 style={{ fontSize: 30, fontWeight: 800, letterSpacing: -1, margin: '0 0 10px' }}>Track Your Order</h1>
-            <p style={{ color: MUTED, fontSize: 14, lineHeight: 1.65, margin: 0 }}>
-              Enter your transaction hash or wallet address to check your order status.
-            </p>
-          </div>
-
-          {/* Search form */}
-          <form onSubmit={search} style={{ marginBottom: 36 }}>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <input
-                value={query}
-                onChange={e => setQuery(e.target.value)}
-                placeholder="0x… tx hash or wallet address"
-                style={{
-                  flex: 1, padding: '13px 16px', borderRadius: 12,
-                  border: '1.5px solid #E0E0DC', background: '#fff',
-                  fontSize: 14, color: TEXT, fontFamily: 'monospace', outline: 'none',
-                }}
-                onFocus={e => { e.target.style.borderColor = GOLD; }}
-                onBlur={e => { e.target.style.borderColor = '#E0E0DC'; }}
-              />
-              <button
-                type="submit" disabled={loading || !query.trim()}
-                style={{
-                  padding: '13px 22px', borderRadius: 12, border: 'none', cursor: loading || !query.trim() ? 'not-allowed' : 'pointer',
-                  background: loading || !query.trim() ? '#E0E0DC' : `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`,
-                  color: '#fff', fontSize: 14, fontWeight: 700, flexShrink: 0,
-                }}
-              >
-                {loading ? '…' : 'Search'}
-              </button>
-            </div>
-            <p style={{ fontSize: 11, color: MUTED, marginTop: 8 }}>
-              Accepts a 66-character tx hash (0x + 64 hex) or a 42-character wallet address.
-            </p>
-          </form>
-
-          {/* Results */}
-          {error && (
-            <div style={{ padding: '14px 18px', borderRadius: 12, background: '#FEF2F2', border: '1px solid #FECACA', fontSize: 13, color: '#DC2626' }}>
-              {error}
-            </div>
-          )}
-
-          {searched && !loading && !error && orders !== null && (
-            orders.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '40px 20px', color: MUTED }}>
-                <svg width={40} height={40} viewBox="0 0 24 24" fill="none" style={{ margin: '0 auto 16px', display: 'block' }}>
-                  <circle cx={11} cy={11} r={8} stroke="#D1D5DB" strokeWidth={2} />
-                  <path d="M21 21l-4.35-4.35" stroke="#D1D5DB" strokeWidth={2} strokeLinecap="round" />
-                </svg>
-                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>No order found</div>
-                <div style={{ fontSize: 13 }}>Double-check the tx hash or wallet address and try again.</div>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                {orders.map(o => <OrderCard key={o.id} order={o} />)}
-              </div>
-            )
-          )}
-
-        </div>
+        <Suspense fallback={<div style={{ padding: '80px 20px', textAlign: 'center', color: MUTED, fontSize: 13 }}>Loading…</div>}>
+          <TrackInner />
+        </Suspense>
       </div>
     </>
   );

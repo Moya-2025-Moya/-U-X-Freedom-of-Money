@@ -5,14 +5,15 @@ import Link from 'next/link';
 import { WagmiProvider, useAccount, useConnect, useDisconnect, useWriteContract, useWaitForTransactionReceipt, useReadContract } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { wagmiConfig } from '../lib/wagmi-config';
-import { U_CONTRACT, TREASURY, BOOK_U_AMOUNT, ERC20_ABI, bscscanTx } from '../lib/constants';
+import {
+  U_CONTRACT, TREASURY, BOOK_U_AMOUNT, ERC20_ABI, bscscanTx,
+  COUNTRIES, isRestrictedCountry, RESTRICTED_COUNTRIES_DISPLAY,
+} from '../lib/constants';
 import { SwapWidget } from '../lib/SwapWidget';
 
-// ─── Restricted destinations ──────────────────────────────────────────────────
-const RESTRICTED_PATTERNS = ['china', 'mainland china', 'prc', "people's republic of china", '中国', '中华人民共和国'];
-function isRestricted(country: string) {
-  return RESTRICTED_PATTERNS.includes(country.trim().toLowerCase());
-}
+// Persistence key — cleared after successful order
+const STORAGE_KEY = 'fom:purchase:v1';
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // ─── Brand constants ──────────────────────────────────────────────────────────
 const GOLD       = '#A18B2F';
@@ -86,7 +87,7 @@ function StepBar({ step }: { step: 1 | 2 | 3 }) {
               <span style={{ fontSize: 10, color: active ? GOLD : MUTED, fontWeight: active ? 700 : 400, letterSpacing: 0.5, whiteSpace: 'nowrap' }}>{label}</span>
             </div>
             {i < steps.length - 1 && (
-              <div style={{ width: 60, height: 1, background: step > n ? GOLD : '#E0E0DC', margin: '0 4px', marginBottom: 20, transition: 'background 0.25s' }} />
+              <div className="fom-step-connector" style={{ width: 60, height: 1, background: step > n ? GOLD : '#E0E0DC', margin: '0 4px', marginBottom: 20, transition: 'background 0.25s' }} />
             )}
           </div>
         );
@@ -121,9 +122,13 @@ function CopyButton({ text, label = 'Copy' }: { text: string; label?: string }) 
 }
 
 // ─── Field ────────────────────────────────────────────────────────────────────
-function Field({ label, name, value, onChange, placeholder, required = false, readOnly = false, autoComplete }: {
+function Field({
+  label, name, value, onChange, placeholder, required = false, readOnly = false,
+  autoComplete, type = 'text', inputMode, list, hint,
+}: {
   label: string; name: string; value: string; onChange?: (v: string) => void;
   placeholder?: string; required?: boolean; readOnly?: boolean; autoComplete?: string;
+  type?: string; inputMode?: 'text' | 'tel' | 'email' | 'numeric' | 'decimal' | 'url'; list?: string; hint?: string;
 }) {
   const [focused, setFocused] = useState(false);
   return (
@@ -132,8 +137,8 @@ function Field({ label, name, value, onChange, placeholder, required = false, re
         {label}{required && <span style={{ color: GOLD, marginLeft: 3 }}>*</span>}
       </label>
       <input
-        type="text" name={name} value={value} placeholder={placeholder} required={required}
-        readOnly={readOnly} autoComplete={autoComplete}
+        type={type} name={name} value={value} placeholder={placeholder} required={required}
+        readOnly={readOnly} autoComplete={autoComplete} inputMode={inputMode} list={list}
         onChange={e => onChange?.(e.target.value)}
         onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
         style={{
@@ -144,23 +149,12 @@ function Field({ label, name, value, onChange, placeholder, required = false, re
           cursor: readOnly ? 'default' : 'text',
         }}
       />
+      {hint && <span style={{ fontSize: 11, color: MUTED }}>{hint}</span>}
     </div>
   );
 }
 
-// ─── Country select ──────────────────────────────────────────────────────────
-const COUNTRIES = [
-  'Argentina', 'Australia', 'Austria', 'Belgium', 'Brazil',
-  'Canada', 'Chile', 'Colombia', 'Denmark', 'Finland',
-  'France', 'Germany', 'Hong Kong', 'India', 'Indonesia',
-  'Ireland', 'Israel', 'Italy', 'Japan', 'Kenya',
-  'Macau', 'Malaysia', 'Mexico', 'Netherlands', 'New Zealand',
-  'Nigeria', 'Norway', 'Philippines', 'Portugal', 'Saudi Arabia',
-  'Singapore', 'South Africa', 'South Korea', 'Spain', 'Sweden',
-  'Switzerland', 'Taiwan', 'Thailand', 'Turkey', 'UAE',
-  'United Kingdom', 'United States', 'Vietnam',
-];
-
+// ─── Country combobox (searchable datalist) ─────────────────────────────────
 function CountrySelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [focused, setFocused] = useState(false);
   return (
@@ -168,24 +162,22 @@ function CountrySelect({ value, onChange }: { value: string; onChange: (v: strin
       <label style={{ fontSize: 12, fontWeight: 600, color: TEXT }}>
         Country<span style={{ color: GOLD, marginLeft: 3 }}>*</span>
       </label>
-      <select
+      <input
         name="country" value={value} required autoComplete="country-name"
+        placeholder="Start typing…"
+        list="fom-countries"
         onChange={e => onChange(e.target.value)}
         onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
         style={{
-          padding: '11px 14px', borderRadius: 10, fontSize: 14, color: value ? TEXT : MUTED, fontFamily: 'inherit',
+          padding: '11px 14px', borderRadius: 10, fontSize: 14, color: TEXT, fontFamily: 'inherit',
           border: `1.5px solid ${focused ? GOLD : '#E0E0DC'}`,
           background: focused ? '#FFFDF5' : '#fff',
           outline: 'none', transition: 'border-color 0.15s, background 0.15s',
-          cursor: 'pointer', appearance: 'none',
-          backgroundImage: `url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%236B6B6B' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
-          backgroundRepeat: 'no-repeat',
-          backgroundPosition: 'right 14px center',
         }}
-      >
-        <option value="" disabled>Select country</option>
-        {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
-      </select>
+      />
+      <datalist id="fom-countries">
+        {COUNTRIES.map(c => <option key={c.code} value={c.name} />)}
+      </datalist>
     </div>
   );
 }
@@ -244,14 +236,19 @@ function Step1({ onConnected }: { onConnected: () => void }) {
 function Step2({
   initial,
   onNext,
+  onFormChange,
 }: {
   initial: ShippingForm;
   onNext: (form: ShippingForm) => void;
+  onFormChange?: (form: ShippingForm) => void;
 }) {
   const { address } = useAccount();
   const { disconnect } = useDisconnect();
   const [form, setForm] = useState<ShippingForm>(initial);
   const [error, setError] = useState('');
+
+  // Propagate every keystroke so the parent can persist it (survives refresh)
+  useEffect(() => { onFormChange?.(form); }, [form, onFormChange]);
 
   const set = (k: keyof ShippingForm) => (v: string) => setForm(p => ({ ...p, [k]: v }));
 
@@ -259,17 +256,32 @@ function Step2({
     e.preventDefault();
     setError('');
 
-    if (isRestricted(form.country)) {
-      setError("We're unable to fulfill orders to your shipping region at this time.");
-      return;
-    }
-
+    const labels: Record<string, string> = {
+      full_name: 'Full name', email: 'Email', phone: 'Phone',
+      address_line1: 'Address', city: 'City', postal_code: 'Postal code', country: 'Country',
+    };
     const required: (keyof ShippingForm)[] = ['full_name', 'email', 'phone', 'address_line1', 'city', 'postal_code', 'country'];
     for (const k of required) {
       if (!form[k].trim()) {
-        setError(`${k.replace('_', ' ')} is required.`);
+        setError(`${labels[k]} is required.`);
         return;
       }
+    }
+
+    if (!EMAIL_RE.test(form.email.trim())) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+
+    const phoneDigits = form.phone.replace(/[^\d]/g, '');
+    if (phoneDigits.length < 6) {
+      setError('Please enter a valid phone number (at least 6 digits).');
+      return;
+    }
+
+    if (isRestrictedCountry(form.country)) {
+      setError(`We can't ship to ${form.country.trim()}. Restricted regions: ${RESTRICTED_COUNTRIES_DISPLAY.join(', ')}.`);
+      return;
     }
 
     onNext(form);
@@ -283,7 +295,13 @@ function Step2({
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderRadius: 50, background: 'rgba(233,210,118,0.08)', border: `1px solid ${GOLD_DIM}` }}>
           <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#22C55E' }} />
           <span style={{ fontSize: 12, color: TEXT, fontWeight: 600 }}>{address ? short(address) : ''}</span>
-          <button onClick={() => disconnect()} style={{ background: 'none', border: 'none', color: MUTED, fontSize: 11, cursor: 'pointer', padding: 0 }}>disconnect</button>
+          <button
+            type="button"
+            onClick={() => {
+              if (confirm('Disconnect wallet? Your shipping form will be preserved.')) disconnect();
+            }}
+            style={{ background: 'none', border: 'none', color: MUTED, fontSize: 11, cursor: 'pointer', padding: 0 }}
+          >disconnect</button>
         </div>
       </div>
 
@@ -297,10 +315,10 @@ function Step2({
         <div style={{ fontSize: 11, color: GOLD, fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase' as const, marginBottom: 12 }}>Contact</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
           <Field label="Full Name" name="full_name" value={form.full_name} onChange={set('full_name')} placeholder="Satoshi Nakamoto" required autoComplete="name" />
-          <Field label="Email" name="email" value={form.email} onChange={set('email')} placeholder="you@example.com" required autoComplete="email" />
+          <Field label="Email" name="email" value={form.email} onChange={set('email')} placeholder="you@example.com" required autoComplete="email" type="email" inputMode="email" />
         </div>
         <div style={{ marginTop: 12 }}>
-          <Field label="Phone" name="phone" value={form.phone} onChange={set('phone')} placeholder="+1 555 000 0000" required autoComplete="tel" />
+          <Field label="Phone" name="phone" value={form.phone} onChange={set('phone')} placeholder="+1 555 000 0000" required autoComplete="tel" type="tel" inputMode="tel" hint="Include country code. Used only if we need to reach you about delivery." />
         </div>
       </div>
 
@@ -350,6 +368,10 @@ function Step2({
       >
         Continue to Payment →
       </button>
+
+      <p style={{ fontSize: 11, color: MUTED, textAlign: 'center', margin: 0, lineHeight: 1.6 }}>
+        We can ship worldwide, except {RESTRICTED_COUNTRIES_DISPLAY.join(', ')}.
+      </p>
     </form>
   );
 }
@@ -358,9 +380,11 @@ function Step2({
 function Step3({
   form,
   onBack,
+  onDone,
 }: {
   form: ShippingForm;
   onBack: () => void;
+  onDone?: () => void;
 }) {
   const { address } = useAccount();
 
@@ -378,7 +402,9 @@ function Step3({
 
   const [submitState, setSubmitState] = useState<'idle' | 'submitting' | 'done' | 'error'>('idle');
   const [submitError, setSubmitError] = useState('');
-  const [orderId, setOrderId] = useState('');
+  const [retryCount, setRetryCount] = useState(0);
+  const [confirmSlow, setConfirmSlow] = useState(false);
+  const [showSwap, setShowSwap] = useState(false);
 
   const balanceU = balance !== undefined ? Number(balance) / 1e18 : null;
   const hasEnough = balanceU !== null && balanceU >= BOOK_USD;
@@ -387,31 +413,50 @@ function Step3({
     ? (BOOK_U_AMOUNT > balance ? BOOK_U_AMOUNT - balance : BigInt(0))
     : BOOK_U_AMOUNT;
 
+  // Always show swap when balance insufficient; otherwise user can expand to swap more.
+  const swapOpen = (balanceU !== null && !hasEnough) || showSwap;
+
+  // Timeout warning while waiting for confirmation
+  useEffect(() => {
+    if (!isConfirming) { setConfirmSlow(false); return; }
+    const t = setTimeout(() => setConfirmSlow(true), 30_000);
+    return () => clearTimeout(t);
+  }, [isConfirming]);
+
+  // Post order with retry — idempotent by tx_hash
+  async function submitOrder(attempt = 0) {
+    setSubmitState('submitting');
+    setSubmitError('');
+    setRetryCount(attempt);
+    try {
+      const res = await fetch('/api/freedomofmoney/purchase', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...form, tx_hash: txHash, wallet_address: address }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Submission failed');
+      setSubmitState('done');
+      onDone?.();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Something went wrong.';
+      // Auto-retry up to 3 times with exponential backoff — payment already on-chain, safe to retry
+      if (attempt < 3) {
+        setSubmitError(`${msg}. Retrying (${attempt + 1}/3)…`);
+        setTimeout(() => submitOrder(attempt + 1), 1500 * Math.pow(2, attempt));
+      } else {
+        setSubmitError(msg);
+        setSubmitState('error');
+      }
+    }
+  }
+
   // After on-chain confirmation, auto-submit order
   useEffect(() => {
     if (!isSuccess || !txHash || submitState !== 'idle') return;
-    setSubmitState('submitting');
-
-    fetch('/api/freedomofmoney/purchase', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...form,
-        tx_hash: txHash,
-        wallet_address: address,
-      }),
-    })
-      .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
-      .then(({ ok, data }) => {
-        if (!ok) throw new Error(data.error || 'Submission failed');
-        setOrderId(data.id);
-        setSubmitState('done');
-      })
-      .catch(err => {
-        setSubmitError(err instanceof Error ? err.message : 'Something went wrong.');
-        setSubmitState('error');
-      });
-  }, [isSuccess, txHash, submitState, form, address]);
+    submitOrder(0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSuccess, txHash]);
 
   function pay() {
     writeContract({
@@ -463,11 +508,26 @@ function Step3({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
+      {/* Back button */}
+      <button
+        type="button"
+        onClick={onBack}
+        disabled={submitState === 'submitting' || isConfirming || isSigning}
+        style={{
+          alignSelf: 'flex-start', background: 'none', border: 'none',
+          fontSize: 13, color: MUTED, cursor: (submitState === 'submitting' || isConfirming || isSigning) ? 'not-allowed' : 'pointer',
+          padding: 0, fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 4,
+        }}
+      >
+        ← Back to shipping
+      </button>
+
       {/* Shipping summary */}
       <div style={{ background: '#F7F5F0', borderRadius: 14, padding: '16px 18px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
           <div style={{ fontSize: 11, color: GOLD, fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase' as const }}>Shipping To</div>
           <button
+            type="button"
             onClick={onBack}
             style={{ background: 'none', border: 'none', fontSize: 12, color: MUTED, cursor: 'pointer', padding: 0, fontFamily: 'inherit', textDecoration: 'underline' }}
           >
@@ -503,21 +563,53 @@ function Step3({
         </p>
       </div>
 
-      {/* Swap widget - always visible when balance insufficient */}
-      {balanceU !== null && !hasEnough && (
+      {/* Swap widget — auto-shown if balance insufficient, else collapsible */}
+      {balanceU !== null && (
         <div style={{ border: `1.5px solid ${GOLD_DIM}`, borderRadius: 12, overflow: 'hidden' }}>
-          <div style={{ padding: '11px 16px', background: '#F7F5F0', borderBottom: `1px solid ${GOLD_DIM}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button
+            type="button"
+            onClick={() => { if (hasEnough) setShowSwap(s => !s); }}
+            style={{
+              width: '100%', padding: '11px 16px', background: '#F7F5F0',
+              borderBottom: swapOpen ? `1px solid ${GOLD_DIM}` : 'none',
+              display: 'flex', alignItems: 'center', gap: 8, border: 'none',
+              cursor: hasEnough ? 'pointer' : 'default', fontFamily: 'inherit',
+            }}
+            aria-expanded={swapOpen}
+          >
             <svg width={14} height={14} viewBox="0 0 24 24" fill="none">
               <path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" stroke={GOLD} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            <span style={{ fontSize: 13, fontWeight: 600, color: TEXT }}>Get {shortfall.toFixed(2)} $U</span>
-          </div>
-          <SwapWidget
-            embedded
-            onSwapped={() => { refetchBalance(); }}
-            onCancel={() => {}}
-            amountU={shortfallBigInt}
-          />
+            <span style={{ fontSize: 13, fontWeight: 600, color: TEXT, flex: 1, textAlign: 'left' as const }}>
+              {hasEnough
+                ? (showSwap ? 'Hide swap' : 'Need more $U? Swap any token →')
+                : `Swap to get ${shortfall.toFixed(2)} more $U`}
+            </span>
+            {hasEnough && (
+              <svg width={14} height={14} viewBox="0 0 24 24" fill="none"
+                style={{ transform: swapOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>
+                <path d="M6 9l6 6 6-6" stroke={MUTED} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+          </button>
+          {swapOpen && (
+            <SwapWidget
+              embedded
+              onSwapped={() => { refetchBalance(); }}
+              onCancel={() => setShowSwap(false)}
+              amountU={hasEnough ? BOOK_U_AMOUNT : shortfallBigInt}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Tx confirmation taking long */}
+      {isConfirming && confirmSlow && txHash && (
+        <div style={{ padding: '12px 16px', borderRadius: 10, background: '#FEF9EC', border: '1px solid #FDE68A', fontSize: 13, color: '#92400E', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div>Still waiting for confirmation. BNB Chain may be congested.</div>
+          <a href={bscscanTx(txHash)} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: GOLD, fontWeight: 600, textDecoration: 'none' }}>
+            View transaction on BscScan ↗
+          </a>
         </div>
       )}
 
@@ -527,15 +619,34 @@ function Step3({
         </div>
       )}
       {submitState === 'error' && (
-        <div style={{ padding: '12px 16px', borderRadius: 10, background: '#FEF2F2', border: '1px solid #FECACA', fontSize: 13, color: '#DC2626' }}>
-          Order saved failed: {submitError} - your payment went through. Please contact support with your tx hash.
+        <div style={{ padding: '14px 16px', borderRadius: 10, background: '#FEF2F2', border: '1px solid #FECACA', fontSize: 13, color: '#DC2626', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div>
+            <strong>Your payment went through</strong> — but we couldn&apos;t save the order automatically after several attempts.
+          </div>
+          <div style={{ fontSize: 12 }}>Reason: {submitError}</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={() => submitOrder(0)}
+              style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#DC2626', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+            >
+              Retry
+            </button>
+            {txHash && (
+              <a href={bscscanTx(txHash)} target="_blank" rel="noreferrer"
+                style={{ padding: '8px 16px', borderRadius: 8, border: '1.5px solid #FECACA', fontSize: 12, fontWeight: 600, color: '#DC2626', textDecoration: 'none' }}>
+                View tx on BscScan ↗
+              </a>
+            )}
+          </div>
+          <div style={{ fontSize: 11, color: '#991B1B' }}>Keep your tx hash safe — we can recover your order from it.</div>
         </div>
       )}
 
       {/* Submitting overlay */}
       {submitState === 'submitting' && (
         <div style={{ padding: '14px 16px', borderRadius: 12, background: 'rgba(233,210,118,0.08)', border: `1px solid ${GOLD_DIM}`, fontSize: 13, color: TEXT, textAlign: 'center' }}>
-          Payment confirmed. Saving your order…
+          {retryCount > 0 ? `Retrying order save (attempt ${retryCount + 1}/4)…` : 'Payment confirmed. Saving your order…'}
         </div>
       )}
 
@@ -575,14 +686,51 @@ const EMPTY_FORM: ShippingForm = {
   city: '', state_province: '', postal_code: '', country: '', notes: '',
 };
 
+function loadPersisted(): { step: 1 | 2 | 3; form: ShippingForm } {
+  if (typeof window === 'undefined') return { step: 1, form: EMPTY_FORM };
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return { step: 1, form: EMPTY_FORM };
+    const parsed = JSON.parse(raw);
+    const step = parsed.step === 3 ? 2 : parsed.step; // resume at address step, never payment
+    return {
+      step: (step === 2 ? 2 : 1) as 1 | 2 | 3,
+      form: { ...EMPTY_FORM, ...(parsed.form || {}) },
+    };
+  } catch {
+    return { step: 1, form: EMPTY_FORM };
+  }
+}
+
 function PurchaseInner() {
   const { isConnected } = useAccount();
+  const [hydrated, setHydrated] = useState(false);
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [form, setForm] = useState<ShippingForm>(EMPTY_FORM);
+
+  // Hydrate from localStorage once on client mount (avoids SSR mismatch)
+  useEffect(() => {
+    const p = loadPersisted();
+    setForm(p.form);
+    setStep(p.step);
+    setHydrated(true);
+  }, []);
+
+  // Persist every change (except Step 3 — payment is on-chain, shouldn't resume)
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ step: step === 3 ? 2 : step, form }));
+    } catch { /* quota / disabled */ }
+  }, [step, form, hydrated]);
 
   useEffect(() => {
     if (!isConnected && step > 1) setStep(1);
   }, [isConnected, step]);
+
+  function clearPersistence() {
+    try { localStorage.removeItem(STORAGE_KEY); } catch {}
+  }
 
   return (
     <div style={{ maxWidth: 620, margin: '0 auto', padding: '40px 24px 80px' }}>
@@ -604,18 +752,21 @@ function PurchaseInner() {
           <Step2
             initial={form}
             onNext={f => { setForm(f); setStep(3); }}
+            onFormChange={setForm}
           />
         )}
         {step === 3 && (
           <Step3
             form={form}
             onBack={() => setStep(2)}
+            onDone={clearPersistence}
           />
         )}
       </div>
 
-      <div style={{ textAlign: 'center', marginTop: 24 }}>
+      <div style={{ textAlign: 'center', marginTop: 24, display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
         <Link href="/freedomofmoney" style={{ fontSize: 12, color: MUTED, textDecoration: 'none' }}>← Back to Campaign</Link>
+        <Link href="/freedomofmoney/swap" style={{ fontSize: 12, color: MUTED, textDecoration: 'none' }}>Get $U ↗</Link>
       </div>
     </div>
   );
@@ -623,27 +774,41 @@ function PurchaseInner() {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function PurchasePage() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
   return (
     <>
-      <style>{`* { box-sizing: border-box; } body { margin: 0; }`}</style>
+      <style>{`
+        * { box-sizing: border-box; } body { margin: 0; }
+        @media (max-width: 420px) {
+          .fom-step-connector { width: 20px !important; }
+        }
+        @media (max-width: 340px) {
+          .fom-step-connector { width: 10px !important; }
+        }
+      `}</style>
       <div style={{ background: BG, minHeight: '100vh', fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', color: TEXT }}>
         <nav style={{ position: 'sticky', top: 0, zIndex: 100, padding: '16px 24px', display: 'flex', justifyContent: 'center' }}>
-          <div style={{ background: 'rgba(250,250,248,0.92)', backdropFilter: 'blur(12px)', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 50, padding: '10px 24px', display: 'flex', alignItems: 'center', gap: 20, maxWidth: 600, width: '100%' }}>
+          <div style={{ background: 'rgba(250,250,248,0.92)', backdropFilter: 'blur(12px)', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 50, padding: '10px 20px', display: 'flex', alignItems: 'center', gap: 16, maxWidth: 600, width: '100%' }}>
             <a href="https://u.tech/" target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, textDecoration: 'none' }}>
               <ULogo size={22} />
               <span style={{ fontSize: 13, fontWeight: 600, color: TEXT }}>United Stables</span>
             </a>
-            <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
-              <Link href="/freedomofmoney" style={{ fontSize: 12, color: MUTED, textDecoration: 'none' }}>← Campaign</Link>
-              <span style={{ fontSize: 12, color: GOLD, fontWeight: 600 }}>Order</span>
-            </div>
+            <Link href="/freedomofmoney" style={{ fontSize: 12, color: MUTED, textDecoration: 'none' }}>← Campaign</Link>
+            <Link href="/freedomofmoney/swap" style={{ fontSize: 12, color: MUTED, textDecoration: 'none' }}>Get $U</Link>
+            <span style={{ fontSize: 12, color: GOLD, fontWeight: 600 }}>Order</span>
           </div>
         </nav>
-        <WagmiProvider config={wagmiConfig}>
-          <QueryClientProvider client={queryClient}>
-            <PurchaseInner />
-          </QueryClientProvider>
-        </WagmiProvider>
+        {mounted ? (
+          <WagmiProvider config={wagmiConfig}>
+            <QueryClientProvider client={queryClient}>
+              <PurchaseInner />
+            </QueryClientProvider>
+          </WagmiProvider>
+        ) : (
+          <div style={{ padding: '80px 20px', textAlign: 'center', color: MUTED, fontSize: 13 }}>Loading…</div>
+        )}
       </div>
     </>
   );

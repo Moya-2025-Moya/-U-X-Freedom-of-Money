@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createPublicClient, http } from 'viem';
 import { bsc } from 'viem/chains';
 import { getSupabaseAdmin } from '@/app/lib/supabase-server';
-import { U_CONTRACT, TREASURY, BOOK_U_AMOUNT } from '@/app/freedomofmoney/lib/constants';
+import { U_CONTRACT, TREASURY, BOOK_U_AMOUNT, RESTRICTED_PATTERNS } from '@/app/freedomofmoney/lib/constants';
 
 // ─── On-chain client - dedicated RPC, same as frontend ───────────────────────
 const bscClient = createPublicClient({
@@ -138,10 +138,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: validationError }, { status: 400 });
     }
 
-    const RESTRICTED_COUNTRIES = ['china', 'mainland china', 'prc', "people's republic of china", '中国', '中华人民共和国', 'north korea', 'dprk', 'iran', 'syria', 'cuba', 'crimea'];
-
     const country = (body.country as string).trim().toLowerCase();
-    if (RESTRICTED_COUNTRIES.some(r => country.includes(r))) {
+    if (RESTRICTED_PATTERNS.some(r => country.includes(r))) {
       return NextResponse.json({ error: 'Orders cannot be fulfilled to this region' }, { status: 400 });
     }
 

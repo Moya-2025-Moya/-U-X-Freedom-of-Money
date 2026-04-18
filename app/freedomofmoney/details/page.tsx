@@ -57,6 +57,7 @@ export default function DetailsPage() {
               <span style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>United Stables</span>
             </a>
             <a href="/freedomofmoney" style={{ fontSize: 12, color: MUTED, textDecoration: 'none' }}>Campaign</a>
+            <a href="/freedomofmoney/swap" style={{ fontSize: 12, color: MUTED, textDecoration: 'none' }}>Get $U</a>
             <a href="/freedomofmoney/purchase" style={{
               padding: '7px 18px', borderRadius: 50, textDecoration: 'none',
               background: TEXT, color: '#fff', fontSize: 12, fontWeight: 700,
@@ -210,8 +211,9 @@ export default function DetailsPage() {
               <ULogo size={18} />
               <span style={{ fontSize: 12, fontWeight: 700, color: TEXT }}>United Stables</span>
             </a>
-            <div style={{ display: 'flex', gap: 16, fontSize: 11, color: MUTED }}>
+            <div style={{ display: 'flex', gap: 16, fontSize: 11, color: MUTED, flexWrap: 'wrap', justifyContent: 'center' }}>
               <a href="/freedomofmoney" style={{ color: MUTED, textDecoration: 'none' }}>Campaign</a>
+              <a href="/freedomofmoney/swap" style={{ color: MUTED, textDecoration: 'none' }}>Get $U</a>
               <a href="/freedomofmoney/track" style={{ color: MUTED, textDecoration: 'none' }}>Track Order</a>
               <a href="https://u.tech/" target="_blank" rel="noreferrer" style={{ color: MUTED, textDecoration: 'none' }}>u.tech ↗</a>
             </div>
